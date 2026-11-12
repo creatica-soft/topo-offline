@@ -29,13 +29,14 @@ enum DOC {
         guard var s = raw?.trimmingCharacters(in: .whitespaces), !s.isEmpty else { return nil }
         // Internal codes in brackets: (TNC), (RTMT), (NZAC)...
         s = s.replacingOccurrences(of: #"\s*\([A-Z0-9]{2,6}\)"#, with: "", options: .regularExpression)
+        // Leading codes: "TAC ", "QCT - ", "T3: ", "RTMT "... Known track codes become a readable
+        // prefix ("Queen Charlotte Track: Torea to Kenepuru"); others are dropped.
         var prefix = ""
-        if s.hasPrefix("TAC ") {
-            prefix = "Tongariro Alpine Crossing: "
-            s.removeFirst(4)
+        if let m = s.range(of: #"^(?:[A-Z]{2,4}|[A-Z]\d)(?:\s*[-:–]\s*|\s+)(?=[A-Z])"#, options: .regularExpression) {
+            let code = s[m].trimmingCharacters(in: CharacterSet(charactersIn: " -:–"))
+            s.removeSubrange(m)
+            if let full = trackCodes[code] { prefix = "\(full): " }
         }
-        // Other leading codes: "T3 ", "RTMT "...
-        s = s.replacingOccurrences(of: #"^(?:[A-Z]{2,4}|[A-Z]\d)(?::\s*|\s+)(?=[A-Z])"#, with: "", options: .regularExpression)
         let words = ["Tk": "Track", "Jn": "Junction", "Jnc": "Junction", "Rd": "Road", "Rte": "Route", "Mt": "Mt"]
         s = s.split(separator: " ").map { w in
             let core = w.trimmingCharacters(in: CharacterSet(charactersIn: "-,"))
@@ -46,6 +47,14 @@ enum DOC {
         s = s.trimmingCharacters(in: .whitespaces)
         return s.isEmpty ? nil : prefix + s
     }
+
+    /// DOC's codes for well-known tracks, as used at the start of section names.
+    static let trackCodes = [
+        "TAC": "Tongariro Alpine Crossing",
+        "TNC": "Tongariro Northern Circuit",
+        "QCT": "Queen Charlotte Track",
+        "RTMT": "Round the Mountain Track",
+    ]
 
     /// "Tramping Track" -> "Tramping track", "Great Walk" stays.
     static func kindName(_ subtype: String?) -> String? {
