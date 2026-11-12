@@ -353,6 +353,10 @@ for z in [17, 18, 20] {
     check(img?.width == 256, "QLD offline z\(z) enlarged from downloaded z16")
 }
 check(await loadQ(TileKey(z: 17, x: 0, y: 0)) == nil, "QLD offline outside download -> nil (national map shows instead)")
+check(TileSources.all.allSatisfy { TopoTileOverlay(source: $0, library: library, offlineOnly: true).maximumZ >= 21 },
+      "every map layer covers zoom 21 (no white screen when fully zoomed in)")
+let deep = await loadQ(TileKey(z: 21, x: (qk.x << 5) + 3, y: (qk.y << 5) + 3))
+check(deep.flatMap(TileImage.decode)?.width == 256, "QLD offline z21 enlarged from downloaded z16")
 
 // 6. Delete cleans up files
 store.delete(r2)

@@ -19,7 +19,10 @@ final class TopoTileOverlay: MKTileOverlay, @unchecked Sendable {
         super.init(urlTemplate: nil)
         tileSize = CGSize(width: 256, height: 256)
         minimumZ = max(source.minZoom, fromZoom ?? source.minZoom)
-        maximumZ = source.maxZoom + maxOverzoom
+        // MapKit draws nothing above maximumZ, which shows as a white screen (the topo map replaces
+        // Apple's map). On high-resolution phones it asks for up to about zoom 20–21 at full zoom-in,
+        // so every layer covers at least that, enlarging its finest tiles as needed.
+        maximumZ = max(source.maxZoom + maxOverzoom, Self.deepestZoom)
         canReplaceMapContent = true
     }
 
@@ -52,8 +55,11 @@ final class TopoTileOverlay: MKTileOverlay, @unchecked Sendable {
         return nil
     }
 
-    /// Beyond 5 levels a 256 px tile is enlarged from 8 px, which is just a smear.
-    private static let maxEnlargeLevels = 5
+    /// Zoom levels MapKit may ask for when fully zoomed in.
+    static let deepestZoom = 21
+    /// How far a downloaded tile may be enlarged offline. Deep enlargements are soft, but a soft
+    /// map beats a blank screen (NZ's finest tiles are zoom 15, six levels below the deepest zoom).
+    private static let maxEnlargeLevels = 6
 
     private static func ancestor(of key: TileKey, levelsUp dz: Int) -> TileKey {
         TileKey(z: key.z - dz, x: key.x >> dz, y: key.y >> dz)
