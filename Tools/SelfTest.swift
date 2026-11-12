@@ -299,6 +299,11 @@ if let offlineTrack {
     let p = await Elevation.profile(for: offlineTrack, library: library, offlineOnly: true)
     check(p != nil, "profile offline from downloaded elevation: \(offlineTrack.displayName) \(p.map { "up \(Int($0.ascent)) m" } ?? "none")")
 }
+// Every track saved with the area gets an offline profile, even where it runs past the edge
+let savedTracks = TrackSources.group(saved).filter { $0.lengthKm > 0.3 }
+var withProfile = 0
+for t in savedTracks where await Elevation.profile(for: t, library: library, offlineOnly: true) != nil { withProfile += 1 }
+check(withProfile == savedTracks.count, "offline profiles for tracks leaving the downloaded area: \(withProfile)/\(savedTracks.count)")
 check(await Elevation.profile(for: Track(segments: [TrackSegment(layer: "x", name: "x", kind: "x", state: "NSW", coords: [140.5, -30.0, 140.51, -30.0])])!,
                               library: noDownloads, offlineOnly: true) == nil, "no profile offline without downloaded elevation")
 

@@ -22,6 +22,19 @@ struct BoundingBox: Codable, Hashable, Sendable {
                            maxLat: min(maxLat, other.maxLat), maxLon: min(maxLon, other.maxLon))
     }
 
+    func union(_ other: BoundingBox) -> BoundingBox {
+        BoundingBox(minLat: min(minLat, other.minLat), minLon: min(minLon, other.minLon),
+                    maxLat: max(maxLat, other.maxLat), maxLon: max(maxLon, other.maxLon))
+    }
+
+    func contains(_ other: BoundingBox) -> Bool {
+        other.minLat >= minLat && other.maxLat <= maxLat && other.minLon >= minLon && other.maxLon <= maxLon
+    }
+
+    func expanded(by degrees: Double) -> BoundingBox {
+        BoundingBox(minLat: minLat - degrees, minLon: minLon - degrees, maxLat: maxLat + degrees, maxLon: maxLon + degrees)
+    }
+
     func contains(_ c: CLLocationCoordinate2D) -> Bool {
         c.latitude >= minLat && c.latitude <= maxLat && c.longitude >= minLon && c.longitude <= maxLon
     }

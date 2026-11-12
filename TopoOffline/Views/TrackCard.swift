@@ -31,7 +31,8 @@ struct TrackCard: View {
                         Label("Tap for elevation profile", systemImage: "chevron.up")
                             .font(.caption.weight(.medium)).foregroundStyle(.tint)
                     case .unavailable:
-                        Text("No elevation data offline here").font(.caption).foregroundStyle(.secondary)
+                        Text("Elevation isn't saved for all of this track. Go online to load it.")
+                            .font(.caption).foregroundStyle(.secondary)
                     case nil:
                         EmptyView()
                     }
