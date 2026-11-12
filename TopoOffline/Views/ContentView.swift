@@ -72,7 +72,8 @@ struct ContentView: View {
     private var mapView: MKMapView? { controller.isMapReady ? controller.mapView : nil }
 
     var body: some View {
-        TopoMapView(source: source, offlineOnly: offlineOnly, nationalWhenZoomedOut: nationalWhenZoomedOut,
+        TopoMapView(source: source, offlineOnly: offlineOnly, showAppleMap: showAppleMap,
+                    nationalWhenZoomedOut: nationalWhenZoomedOut,
                     library: store.library,
                     regions: store.regions, pin: pin, track: highlighted,
                     areaTracks: visibleTracks.segments, areaTracksVersion: visibleTracks.version,
@@ -90,7 +91,9 @@ struct ContentView: View {
                         pinChip(pin)
                     }
                     if nzNeedsKey {
-                        Text("The New Zealand topo map needs a LINZ key (see README). Tracks, huts and search work.")
+                        Text(offlineOnly
+                             ? "The New Zealand topo map is coming in an update. DOC tracks, huts and campsites still work."
+                             : "The New Zealand topo map is coming in an update. Showing Apple's map for now.")
                             .font(.footnote)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 12).padding(.vertical, 8)
@@ -200,6 +203,14 @@ struct ContentView: View {
             if let names = try? await NZPlaceNames.fetchAll() { store.library.setNationalNames(names) }
             nzNamesLoading = false
         }
+    }
+
+    /// No available topo map covers the middle of the screen (e.g. NZ without a LINZ key, or outside
+    /// Australia and NZ). Online, Apple's map is shown there instead of a blank page; Offline mode
+    /// still makes no network requests, so it stays blank.
+    private var showAppleMap: Bool {
+        guard !offlineOnly, let c = controller.visibleArea?.center else { return false }
+        return !TileSources.all.contains { $0.covers(c) }
     }
 
     /// In New Zealand without a LINZ key there's no topo map: say so instead of a blank map.
