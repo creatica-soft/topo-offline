@@ -1,0 +1,9 @@
+// Shared build settings. Private values (team, bundle ID, API keys) live in Secrets.xcconfig,
+// which is optional and ignored by git; copy Secrets.example.xcconfig to create it.
+
+DEVELOPMENT_TEAM =
+PRODUCT_BUNDLE_IDENTIFIER = com.example.topo-offline
+LINZ_API_KEY =
+LINZ_KEY_IS_DEVELOPER = NO
+
+#include? "Secrets.xcconfig"
