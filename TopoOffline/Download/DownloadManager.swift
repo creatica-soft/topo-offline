@@ -123,8 +123,9 @@ final class DownloadManager {
             }
             let namesOK = Task.isCancelled ? false : await saveNames(for: &region)
             let tracksOK = Task.isCancelled ? false : await saveTracks(for: &region)
+            let terrainOK = Task.isCancelled ? false : await ensureTerrain(for: &region) != .failed
             region.failedTiles = progress.failed
-            region.isComplete = !Task.isCancelled && progress.failed == 0 && namesOK && tracksOK
+            region.isComplete = !Task.isCancelled && progress.failed == 0 && namesOK && tracksOK && terrainOK
             store.upsert(region)
             state = Task.isCancelled ? .cancelled : .finished
         } catch {
@@ -146,30 +147,46 @@ final class DownloadManager {
             let tracks = await saveTracks(for: &region)
             if names || tracks { store.upsert(region) }
         }
-        for var region in store.regions where region.isComplete && !region.layers.contains(where: { $0.sourceID == TileSources.terrain.id }) {
+        // Elevation for older areas, and for tracks that run past an area's edge.
+        for var region in store.regions where region.isComplete {
             guard !isRunning else { return }
-            if await addTerrain(to: &region) { store.upsert(region) }
+            if await ensureTerrain(for: &region) == .updated { store.upsert(region) }
         }
     }
 
-    /// Elevation tiles for an area downloaded before profiles existed (a few dozen small tiles).
-    private func addTerrain(to region: inout OfflineRegion) async -> Bool {
+    enum TerrainResult { case unchanged, updated, failed }
+
+    /// Makes sure elevation is saved for the area and for wherever its saved tracks go (up to
+    /// ~10 km beyond the area), so profiles work offline for tracks that run past the edge.
+    /// Only missing tiles are fetched; it's a few dozen small tiles for a typical area.
+    func ensureTerrain(for region: inout OfflineRegion) async -> TerrainResult {
         let terrain = TileSources.terrain
-        guard let box = region.bbox.intersection(terrain.coverage) else { return false }
-        let layer = OfflineRegion.Layer(sourceID: terrain.id, bbox: box, minZoom: terrain.maxZoom, maxZoom: terrain.maxZoom,
-                                        fileName: "\(region.id.uuidString)-\(terrain.id).mbtiles")
-        let keys = TileMath.tiles(for: box, zooms: layer.zooms)
-        guard keys.count <= 2000,
-              let db = try? MBTiles(url: store.library.fileURL(layer.fileName), create: true) else { return false }
-        for key in keys {
-            if db.contains(key) { continue }
+        var wanted = region.bbox
+        if let file = region.tracksFileName,
+           let data = try? Data(contentsOf: store.library.fileURL(file)),
+           let segments = try? JSONDecoder().decode([TrackSegment].self, from: data) {
+            for s in segments { wanted = wanted.union(s.bbox) }
+        }
+        guard let box = wanted.intersection(region.bbox.expanded(by: 0.1))?.intersection(terrain.coverage) else {
+            return .unchanged  // outside the elevation data's coverage
+        }
+        let existing = region.layers.firstIndex { $0.sourceID == terrain.id }
+        if let i = existing, region.layers[i].bbox.contains(box) { return .unchanged }
+
+        let fileName = existing.map { region.layers[$0].fileName } ?? "\(region.id.uuidString)-\(terrain.id).mbtiles"
+        let keys = TileMath.tiles(for: box, zooms: terrain.maxZoom...terrain.maxZoom)
+        guard keys.count <= 1500,
+              let db = try? MBTiles(url: store.library.fileURL(fileName), create: true) else { return .failed }
+        for key in keys where !db.contains(key) {
             guard let (data, response) = try? await TileNetwork.download.data(from: terrain.tileURL(key)),
-                  (response as? HTTPURLResponse)?.statusCode == 200, TileImage.isImage(data) else { return false }
+                  (response as? HTTPURLResponse)?.statusCode == 200, TileImage.isImage(data) else { return .failed }
             try? db.insert(key, data: data)
         }
         db.checkpoint()
-        region.layers.append(layer)
-        return true
+        let layer = OfflineRegion.Layer(sourceID: terrain.id, bbox: box, minZoom: terrain.maxZoom,
+                                        maxZoom: terrain.maxZoom, fileName: fileName)
+        if let i = existing { region.layers[i] = layer } else { region.layers.append(layer) }
+        return .updated
     }
 
     /// Bump when the way tracks are named or grouped changes; older saved files are then refreshed.

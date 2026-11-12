@@ -116,7 +116,11 @@ struct ContentView: View {
                 }
                 loadNZNamesIfNeeded()
             }
-            .onChange(of: offlineOnly) { refreshVisibleTracks() }
+            .onChange(of: offlineOnly) {
+                refreshVisibleTracks()
+                // Back online: top up older areas (names, tracks, elevation) now, not only at launch.
+                if !offlineOnly { Task { await downloads.addMissingNames(offlineOnly: false) } }
+            }
             .sheet(isPresented: $showDownload) {
                 DownloadSheet(current: source, visibleArea: controller.visibleArea ?? source.coverage,
                               nationalWhenZoomedOut: nationalWhenZoomedOut)
