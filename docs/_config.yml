@@ -1,0 +1,4 @@
+# GitHub Pages site for the app (Settings › Pages › Deploy from branch: main, folder /docs).
+title: Topo Offline
+description: Offline topographic maps for Australia and New Zealand. No account, no ads, no tracking.
+theme: jekyll-theme-minimal
