@@ -9,7 +9,7 @@ struct TrackCard: View {
     let onClose: () -> Void
 
     var body: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .top, spacing: 10) {
             Image(systemName: "figure.hiking")
                 .font(.title3)
                 .foregroundStyle(.purple)
@@ -55,21 +55,24 @@ struct TrackCard: View {
             }
             .buttonStyle(.plain)
             Spacer(minLength: 0)
-            Button(action: onZoom) {
-                Image(systemName: "arrow.up.left.and.arrow.down.right")
-                    .font(.title3)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+            // Close above, zoom below: stacked so the text gets the card's width.
+            VStack(spacing: 0) {
+                Button(action: onClose) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Close")
+                Button(action: onZoom) {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.title3)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Show whole track")
             }
-            .accessibilityLabel("Show whole track")
-            Button(action: onClose) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel("Close")
         }
         .padding(.leading, 12)
         .padding(.vertical, 6)
