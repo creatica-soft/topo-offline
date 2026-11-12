@@ -65,7 +65,8 @@ struct Campsite: Codable, Identifiable, Hashable, Sendable {
     var credit: String {
         switch source {
         case CampSource.osm: return CampSource.osmCredit
-        case CampSource.nswParks: return "NSW National Parks and Wildlife Service"
+        // Wording given by the NSW data broker (NPWS asset data is CC BY).
+        case CampSource.nswParks: return "© State Government of NSW and NSW Department of Climate Change, Energy, the Environment and Water 2026, CC BY"
         case CampSource.vicmap: return "Vicmap Features of Interest © State of Victoria, CC BY 4.0"
         case CampSource.gazetteer: return "Composite Gazetteer of Australia © Geoscience Australia, CC BY 4.0"
         default: return region == "NZ" ? NZParkData.attribution : VicParkData.attribution
