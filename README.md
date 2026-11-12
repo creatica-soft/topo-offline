@@ -80,7 +80,7 @@ where its data is shown.
 | Australia 1:250k map, place names | Geoscience Australia | CC BY 4.0 |
 | Victorian tracks and campgrounds | Vicmap, State of Victoria | CC BY 4.0 |
 | Victorian state forest sites and closures | DEECA, State of Victoria | CC BY 4.0 |
-| NSW campground locations | NSW National Parks and Wildlife Service | not stated; confirmation requested |
+| NSW campground locations | NSW National Parks and Wildlife Service: "© State Government of NSW and NSW Department of Climate Change, Energy, the Environment and Water 2026" | CC BY (confirmed by the NSW data broker) |
 | New Zealand topo map | Toitū Te Whenua LINZ (Basemaps) | CC BY 4.0, Basemaps terms of use |
 | NZ place names | LINZ, NZ Gazetteer | CC BY 4.0 |
 | NZ tracks, huts, campsites, closures, freedom camping | Department of Conservation | CC BY 4.0 |

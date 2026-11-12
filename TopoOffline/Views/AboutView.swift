@@ -51,7 +51,7 @@ struct AboutView: View {
                 .padding(.vertical, 2)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Campgrounds").font(.headline)
-                    Text("NSW National Parks and Wildlife Service; Vicmap Features of Interest © State of Victoria, CC BY 4.0; Composite Gazetteer of Australia © Geoscience Australia, CC BY 4.0.").font(.footnote)
+                    Text("NSW campgrounds: © State Government of NSW and NSW Department of Climate Change, Energy, the Environment and Water 2026, CC BY. Vicmap Features of Interest © State of Victoria, CC BY 4.0; Composite Gazetteer of Australia © Geoscience Australia, CC BY 4.0.").font(.footnote)
                     Text("Community campsites and facilities: \(CampSource.osmCredit). Shown in teal; may be out of date.").font(.footnote)
                     Link("OpenStreetMap licence (ODbL)", destination: URL(string: "https://www.openstreetmap.org/copyright")!).font(.footnote)
                     Link("Download the campsite data used by this app", destination: CommunityCampsites.publishedExtractURL).font(.footnote)
