@@ -10,7 +10,7 @@ struct AboutView: View {
             }
             Section("Privacy") {
                 Text("No account, no ads, no analytics, no tracking. Your location is only used on this iPhone to show the blue dot and is never sent anywhere.")
-                Text("The only internet traffic is map images, place-name searches, track and closure data, sent directly to the government servers credited below.")
+                Text("The only internet traffic is map images, place-name searches, track and closure data, sent directly to the government servers credited below. Where no topographic map is available, Apple's map is shown instead (when online).")
             }
 
             Section {

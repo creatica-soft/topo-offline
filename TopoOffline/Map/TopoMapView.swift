@@ -5,6 +5,8 @@ import MapKit
 struct TopoMapView: UIViewRepresentable {
     let source: TileSource
     let offlineOnly: Bool
+    /// Let Apple's map show underneath: used where no topo map covers the screen (Online only).
+    let showAppleMap: Bool
     /// Show the national map instead of the state map when zoomed out.
     let nationalWhenZoomedOut: Bool
     let library: OfflineTileLibrary
@@ -43,13 +45,15 @@ struct TopoMapView: UIViewRepresentable {
         map.pointOfInterestFilter = .excludingAll
         map.cameraZoomRange = MKMapView.CameraZoomRange(minCenterCoordinateDistance: 200)
         map.setRegion(MapController.australia, animated: false)
+        // When Apple's map is shown (no topo map for the area), keep it quiet so tracks and pins stand out.
+        map.preferredConfiguration = MKStandardMapConfiguration(elevationStyle: .flat, emphasisStyle: .muted)
         DispatchQueue.main.async { controller.attach(map) }  // not during a SwiftUI view update
         context.coordinator.attachTapGestures(to: map)
         return map
     }
 
     func updateUIView(_ map: MKMapView, context: Context) {
-        context.coordinator.configure(map, source: source, offlineOnly: offlineOnly,
+        context.coordinator.configure(map, source: source, offlineOnly: offlineOnly, showAppleMap: showAppleMap,
                                       nationalWhenZoomedOut: nationalWhenZoomedOut,
                                       library: library, regions: regions)
         context.coordinator.showPin(pin, on: map)
@@ -313,11 +317,11 @@ struct TopoMapView: UIViewRepresentable {
         }
 
         @MainActor
-        func configure(_ map: MKMapView, source: TileSource, offlineOnly: Bool, nationalWhenZoomedOut: Bool,
-                       library: OfflineTileLibrary, regions: [OfflineRegion]) {
+        func configure(_ map: MKMapView, source: TileSource, offlineOnly: Bool, showAppleMap: Bool,
+                       nationalWhenZoomedOut: Bool, library: OfflineTileLibrary, regions: [OfflineRegion]) {
             // Tile layers: the national overview underneath, the chosen map on top
             // (optionally only once zoomed in far enough).
-            let key = "\(source.id)|\(offlineOnly)|\(nationalWhenZoomedOut)"
+            let key = "\(source.id)|\(offlineOnly)|\(nationalWhenZoomedOut)|\(showAppleMap)"
             if key != layerKey {
                 layerKey = key
                 map.removeOverlays(tileOverlays)
@@ -325,10 +329,12 @@ struct TopoMapView: UIViewRepresentable {
                 let isStateMap = source.id != TileSources.overview.id && source.usesNationalOverview
                 if isStateMap {
                     layers.append(TopoTileOverlay(source: TileSources.overview, library: library,
-                                                  offlineOnly: offlineOnly, maxOverzoom: 6))
+                                                  offlineOnly: offlineOnly, maxOverzoom: 6,
+                                                  replacesAppleMap: !showAppleMap))
                 }
                 layers.append(TopoTileOverlay(source: source, library: library, offlineOnly: offlineOnly,
-                                              fromZoom: isStateMap && nationalWhenZoomedOut ? TileSources.detailFromZoom : nil))
+                                              fromZoom: isStateMap && nationalWhenZoomedOut ? TileSources.detailFromZoom : nil,
+                                              replacesAppleMap: !showAppleMap))
                 for (i, layer) in layers.enumerated() {
                     map.insertOverlay(layer, at: i, level: .aboveLabels)
                 }

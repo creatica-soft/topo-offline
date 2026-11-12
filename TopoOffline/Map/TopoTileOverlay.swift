@@ -11,7 +11,8 @@ final class TopoTileOverlay: MKTileOverlay, @unchecked Sendable {
 
     /// `fromZoom` hides this layer when zoomed out further, letting the layer underneath show.
     init(source: TileSource, library: OfflineTileLibrary, offlineOnly: Bool,
-         fromZoom: Int? = nil, maxOverzoom: Int = 4, session: URLSession = TileNetwork.browse) {
+         fromZoom: Int? = nil, maxOverzoom: Int = 4, session: URLSession = TileNetwork.browse,
+         replacesAppleMap: Bool = true) {
         self.source = source
         self.library = library
         self.offlineOnly = offlineOnly
@@ -23,7 +24,9 @@ final class TopoTileOverlay: MKTileOverlay, @unchecked Sendable {
         // Apple's map). On high-resolution phones it asks for up to about zoom 20–21 at full zoom-in,
         // so every layer covers at least that, enlarging its finest tiles as needed.
         maximumZ = max(source.maxZoom + maxOverzoom, Self.deepestZoom)
-        canReplaceMapContent = true
+        // Normally the topo map replaces Apple's map entirely. Where no topo map covers the screen,
+        // Apple's map is allowed to show underneath instead of a blank page.
+        canReplaceMapContent = replacesAppleMap
     }
 
     override func loadTile(at path: MKTileOverlayPath, result: @escaping (Data?, Error?) -> Void) {

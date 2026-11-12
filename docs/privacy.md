@@ -47,7 +47,9 @@ policy.
 You can switch the app to **Offline** mode, and it will make no requests at all and use only maps
 and data already on your phone.
 
-The app is built with Apple's iOS and MapKit frameworks, which are covered by
+Where no topographic map is available for the area on screen (for example outside Australia),
+the app shows Apple's map instead, which loads map images from Apple. This doesn't happen in
+Offline mode. The app is built with Apple's iOS and MapKit frameworks, which are covered by
 [Apple's privacy policy](https://www.apple.com/legal/privacy/).
 
 ## Data stored on your phone
