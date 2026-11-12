@@ -189,6 +189,7 @@ if let snap {
 check(DOC.cleanName("Oturere Hut to Emerald Lakes Track (TNC)") == "Oturere Hut to Emerald Lakes Track", "DOC: code '(TNC)' removed")
 check(DOC.cleanName("Upper Tama Lakes Tk") == "Upper Tama Lakes Track", "DOC: 'Tk' -> 'Track'")
 check(DOC.cleanName("T3: Kahikanui Track") == "Kahikanui Track", "DOC: 'T3: ' code removed")
+check(DOC.cleanName("QCT - Torea to Kenepuru") == "Queen Charlotte Track: Torea to Kenepuru", "DOC: 'QCT - ' -> \(DOC.cleanName("QCT - Torea to Kenepuru") ?? "nil")")
 check(DOC.cleanName("TAC Soda Springs Jn-Red Crater") == "Tongariro Alpine Crossing: Soda Springs Junction-Red Crater",
       "DOC: TAC -> \(DOC.cleanName("TAC Soda Springs Jn-Red Crater") ?? "nil")")
 check(DOC.cleanName("T3 Whangaehu Hut (RTMT) (NZAC)") == "Whangaehu Hut", "DOC: 'T3 ... (RTMT) (NZAC)' -> \(DOC.cleanName("T3 Whangaehu Hut (RTMT) (NZAC)") ?? "nil")")
@@ -284,6 +285,10 @@ let line = (0...30).map { CLLocationCoordinate2D(latitude: -33.7, longitude: 150
 let pieces = [Array(line[10...20]), Array(line[0...10].reversed()), Array(line[20...30])]
 let chained = TrackPath.chain(pieces)
 check(chained.usedAll && abs(TrackPath.length(chained.path) - TrackPath.length(line)) < 1, "pieces joined into one line (\(Int(TrackPath.length(chained.path))) m)")
+// Pieces 3 km apart (a track following a road between walking sections) are bridged, and flagged
+let far = [Array(line[0...10]), (0...10).map { CLLocationCoordinate2D(latitude: -33.7, longitude: 150.36 + Double($0) * 0.001) }]
+let bridged = TrackPath.chain(far)
+check(bridged.usedAll && bridged.bridged, "pieces with a 3 km gap are bridged and flagged")
 check(Elevation.climb([100, 101, 104, 103, 110, 90], threshold: 3) == (10, 20), "climb adds up rises/falls over the threshold")
 for (q, c) in [("federal pass", katoombaC), ("ships stern", CLLocationCoordinate2D(latitude: -28.23, longitude: 153.13))] {
     if let t = try await TrackSources.search(q, near: c).first,

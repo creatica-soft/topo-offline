@@ -19,22 +19,29 @@ struct TrackCard: View {
                     Text(track.displayName)
                         .font(.headline)
                         .lineLimit(2)
-                    Text("\(track.kind) · \(length)")
+                    // One fact per line, so it reads well with large text sizes too.
+                    Text(track.kind)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     switch profile {
-                    case .loading:
-                        Label("Elevation…", systemImage: "chart.xyaxis.line").font(.caption).foregroundStyle(.secondary)
                     case .ready(let p):
-                        Text("↑ \(Int(p.ascent)) m  ↓ \(Int(p.descent)) m · \(Int(p.lowest))–\(Int(p.highest)) m")
+                        Text("\(length) · ↑ \(Int(p.ascent)) m ↓ \(Int(p.descent)) m")
                             .font(.subheadline.weight(.medium)).monospacedDigit()
+                        if p.lengthKm < track.lengthKm * 0.9 {
+                            Text("Climb for \(String(format: "%.0f", p.lengthKm)) of \(String(format: "%.0f", track.lengthKm)) km")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                         Label("Tap for elevation profile", systemImage: "chevron.up")
                             .font(.caption.weight(.medium)).foregroundStyle(.tint)
+                    case .loading:
+                        Text(length).font(.subheadline.weight(.medium)).monospacedDigit()
+                        Label("Elevation…", systemImage: "chart.xyaxis.line").font(.caption).foregroundStyle(.secondary)
                     case .unavailable:
+                        Text(length).font(.subheadline.weight(.medium)).monospacedDigit()
                         Text("Elevation isn't saved for all of this track. Go online to load it.")
                             .font(.caption).foregroundStyle(.secondary)
                     case nil:
-                        EmptyView()
+                        Text(length).font(.subheadline.weight(.medium)).monospacedDigit()
                     }
                     if let credit = TrackSources.attribution(for: track.state) {
                         Text(credit)

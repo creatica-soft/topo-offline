@@ -32,7 +32,13 @@ struct TrackDetailView: View {
                     chart
                     stats
                     if !shown.coversWholeTrack {
-                        Label("This track branches; the profile follows its main line.", systemImage: "info.circle")
+                        Label("The profile covers \(String(format: "%.0f", shown.lengthKm)) of \(String(format: "%.0f", track.lengthKm)) km: side tracks and far-off sections aren't included.",
+                              systemImage: "info.circle")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    if shown.bridgedGaps {
+                        Label("Where the published track has gaps (often where it follows a road), the profile joins them in a straight line.",
+                              systemImage: "info.circle")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                     Text("Elevations are from 30 m terrain data (8 m in New Zealand) and smoothed, so totals are approximate.")

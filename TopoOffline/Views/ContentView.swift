@@ -367,8 +367,9 @@ struct ContentView: View {
         .padding(.bottom, 6)
     }
 
+    /// Credit for what's on screen: the chosen map, plus the national map only when it's shown under it.
     private var attribution: String {
-        source.id == TileSources.overview.id
+        source.id == TileSources.overview.id || !source.usesNationalOverview
             ? source.attribution
             : "\(source.attribution) · \(TileSources.overview.attribution)"
     }

@@ -18,6 +18,8 @@ enum Elevation {
         var descent: Double
         /// False when the track branches and only its main line is profiled.
         var coversWholeTrack: Bool
+        /// True when gaps in the published track were joined with straight lines.
+        var bridgedGaps: Bool = false
 
         var lengthKm: Double { (distances.last ?? 0) / 1000 }
         var highest: Double { elevations.max() ?? 0 }
@@ -27,7 +29,7 @@ enum Elevation {
             let total = distances.last ?? 0
             return Profile(distances: distances.reversed().map { total - $0 }, elevations: elevations.reversed(),
                            points: points.reversed(), ascent: descent, descent: ascent,
-                           coversWholeTrack: coversWholeTrack)
+                           coversWholeTrack: coversWholeTrack, bridgedGaps: bridgedGaps)
         }
 
         /// Position on the track at a distance along it (for the map marker while scrubbing).
@@ -45,11 +47,16 @@ enum Elevation {
     /// Builds the profile for a track: joins its pieces into one line, samples it about every
     /// 10–25 m, looks up the terrain, and smooths out SRTM noise before adding up climbs.
     static func profile(for track: Track, library: OfflineTileLibrary, offlineOnly: Bool) async -> Profile? {
-        let (path, usedAll) = TrackPath.chain(track.segments.map(\.points))
+        let chained = TrackPath.chain(track.segments.map(\.points))
+        let path = chained.path
         guard path.count >= 2 else { return nil }
-        let samples = TrackPath.sample(path, maxSamples: 600)
+        // Totals need fine sampling (every 25 m) whatever the track's length: sparse samples on a
+        // long track skip over hills and badly under-count the climb. The chart gets a thinned copy.
+        let samples = TrackPath.sample(path, maxSamples: 20_000, minStep: 25)
         let terrain = TerrainReader(library: library, offlineOnly: offlineOnly)
+        await terrain.prefetch(samples.points)
         var elevations: [Double?] = []
+        elevations.reserveCapacity(samples.points.count)
         for p in samples.points { elevations.append(await terrain.elevation(at: p)) }
         let known = elevations.compactMap { $0 }
         // Without most of the terrain (offline, area not downloaded) there's no honest profile.
@@ -57,11 +64,17 @@ enum Elevation {
         let filled = fillGaps(elevations)
         // Smooth over ~150 m: 30 m terrain data jumps between cliff tops and bottoms beside tracks
         // that run along escarpments, which would otherwise add up to a lot of phantom climbing.
-        let step = samples.distances.count > 1 ? samples.distances[1] - samples.distances[0] : 10
+        let step = samples.distances.count > 1 ? samples.distances[1] - samples.distances[0] : 25
         let smooth = movingAverage(filled, window: max(5, Int((150 / step).rounded()) | 1))
         let (up, down) = climb(smooth, threshold: 5)
-        return Profile(distances: samples.distances, elevations: smooth, points: samples.points,
-                       ascent: up, descent: down, coversWholeTrack: usedAll)
+        // About 800 points is plenty for the chart and keeps dragging along it smooth.
+        let every = max(1, smooth.count / 800)
+        var keep = Array(stride(from: 0, to: smooth.count, by: every))
+        if keep.last != smooth.count - 1 { keep.append(smooth.count - 1) }
+        return Profile(distances: keep.map { samples.distances[$0] }, elevations: keep.map { smooth[$0] },
+                       points: keep.map { samples.points[$0] },
+                       ascent: up, descent: down, coversWholeTrack: chained.usedAll,
+                       bridgedGaps: chained.bridged)
     }
 
     /// Single-point lookup (also used by the self-test).
@@ -105,12 +118,39 @@ enum Elevation {
 enum TrackPath {
     /// Greedy chaining: start with the longest piece and keep attaching the nearest piece whose end
     /// touches either end of the line (within `gap` metres), flipping pieces as needed.
-    static func chain(_ pieces: [[CLLocationCoordinate2D]], gaps: [Double] = [60, 250]) -> (path: [CLLocationCoordinate2D], usedAll: Bool) {
+    struct Chained {
+        var path: [CLLocationCoordinate2D]
+        /// False when some pieces (side tracks, far-off sections) couldn't be fitted into one line.
+        var usedAll: Bool
+        /// True when gaps in the published data were joined with straight lines.
+        var bridged: Bool
+    }
+
+    /// Joins pieces into one line in two passes:
+    ///  1. pieces that touch (or nearly: up to 250 m apart) form continuous stretches;
+    ///  2. stretches are linked across larger gaps (up to `bridge` metres). Tracks often follow roads
+    ///     or 4WD tracks that aren't in the walking-track data, which leaves gaps of several km.
+    static func chain(_ pieces: [[CLLocationCoordinate2D]], gaps: [Double] = [60, 250],
+                      bridge: Double = 10_000) -> Chained {
         var remaining = pieces.filter { $0.count >= 2 }
-        guard !remaining.isEmpty else { return ([], true) }
-        let firstIndex = remaining.indices.max { length(remaining[$0]) < length(remaining[$1]) }!
-        var path = remaining.remove(at: firstIndex)
-        // Prefer pieces that touch; only then bridge small gaps in the published data.
+        guard !remaining.isEmpty else { return Chained(path: [], usedAll: true, bridged: false) }
+        var stretches: [[CLLocationCoordinate2D]] = []
+        while !remaining.isEmpty {
+            let longest = remaining.indices.max { length(remaining[$0]) < length(remaining[$1]) }!
+            var path = remaining.remove(at: longest)
+            grow(&path, from: &remaining, gaps: gaps)
+            stretches.append(path)
+        }
+        var path = stretches.removeFirst()  // the longest stretch
+        let before = stretches.count
+        grow(&path, from: &stretches, gaps: [bridge])
+        return Chained(path: path, usedAll: stretches.isEmpty, bridged: stretches.count < before)
+    }
+
+    /// Repeatedly attaches the nearest piece whose end is within the gap of either end of `path`,
+    /// trying smaller gaps first.
+    private static func grow(_ path: inout [CLLocationCoordinate2D], from remaining: inout [[CLLocationCoordinate2D]],
+                             gaps: [Double]) {
         var gapIndex = 0
         while gapIndex < gaps.count {
             let gap = gaps[gapIndex]
@@ -135,14 +175,14 @@ enum TrackPath {
             if b.flip { piece.reverse() }
             if b.atEnd { path += piece } else { path = piece + path }
         }
-        return (path, remaining.isEmpty)
     }
 
-    static func sample(_ path: [CLLocationCoordinate2D], maxSamples: Int) -> (points: [CLLocationCoordinate2D], distances: [Double]) {
+    static func sample(_ path: [CLLocationCoordinate2D], maxSamples: Int,
+                       minStep: Double = 10) -> (points: [CLLocationCoordinate2D], distances: [Double]) {
         var cumulative = [0.0]
         for (a, b) in zip(path, path.dropFirst()) { cumulative.append(cumulative.last! + meters(a, b)) }
         let total = cumulative.last!
-        let step = max(10, total / Double(maxSamples))
+        let step = max(minStep, total / Double(maxSamples))
         var points: [CLLocationCoordinate2D] = [], distances: [Double] = []
         var d = 0.0, j = 0
         while d <= total {
@@ -201,8 +241,28 @@ actor TerrainReader {
         return top * (1 - ty) + bottom * ty
     }
 
-    private func grid(for key: TileKey) async -> [Float]? {
-        if let cached = tiles[key] { return cached }
+    /// Loads every tile the points need, several at a time (a long track can cross 100+ tiles).
+    func prefetch(_ points: [CLLocationCoordinate2D]) async {
+        let z = TileSources.terrain.maxZoom
+        let keys = Set(points.map { TileKey(z: z, x: TileMath.tileX(lon: $0.longitude, z: z),
+                                             y: TileMath.tileY(lat: $0.latitude, z: z)) })
+            .filter { tiles[$0] == nil }
+        let library = self.library, offlineOnly = self.offlineOnly
+        await withTaskGroup(of: (TileKey, [Float]?).self) { group in
+            var pending = keys.makeIterator()
+            func add() {
+                guard let key = pending.next() else { return }
+                group.addTask { (key, await Self.load(key, library: library, offlineOnly: offlineOnly)) }
+            }
+            for _ in 0..<6 { add() }
+            for await (key, grid) in group {
+                tiles[key] = .some(grid)
+                add()
+            }
+        }
+    }
+
+    private static func load(_ key: TileKey, library: OfflineTileLibrary, offlineOnly: Bool) async -> [Float]? {
         var data = library.tile(sourceID: TileSources.terrain.id, key: key)
         if data == nil, !offlineOnly {
             var request = URLRequest(url: TileSources.terrain.tileURL(key))
@@ -211,8 +271,13 @@ actor TerrainReader {
                 data = d
             }
         }
-        let decoded = data.flatMap(Self.decode)
-        tiles[key] = decoded
+        return data.flatMap(decode)
+    }
+
+    private func grid(for key: TileKey) async -> [Float]? {
+        if let cached = tiles[key] { return cached }  // includes "known to be missing"
+        let decoded = await Self.load(key, library: library, offlineOnly: offlineOnly)
+        tiles[key] = .some(decoded)  // `.some`: store a missing tile as nil instead of removing the entry
         return decoded
     }
 
