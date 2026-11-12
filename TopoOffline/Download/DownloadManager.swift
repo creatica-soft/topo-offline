@@ -191,7 +191,8 @@ final class DownloadManager {
 
     /// Bump when the way tracks are named or grouped changes; older saved files are then refreshed.
     /// v2: Queensland tracks grouped by their public name (visitor_id).
-    private static let tracksFormat = "tracks-v2"
+    /// v3: DOC section codes expanded ("QCT - Torea to Kenepuru" -> "Queen Charlotte Track: ...").
+    private static let tracksFormat = "tracks-v3"
 
     private static func isCurrentTracksFile(_ file: String?) -> Bool {
         file?.hasSuffix("-\(tracksFormat).json") == true
