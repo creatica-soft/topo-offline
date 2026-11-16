@@ -44,6 +44,7 @@ final class DownloadManager {
     /// Builds the layers for a new download: the chosen map, plus the national overview underneath it.
     nonisolated static func plan(name: String, area: BoundingBox, source: TileSource, zooms: ClosedRange<Int>,
                      includeOverview: Bool) -> OfflineRegion? {
+        guard source.allowsOffline else { return nil }
         let id = UUID()
         var layers: [OfflineRegion.Layer] = []
         if let box = area.intersection(source.coverage) {
@@ -236,6 +237,7 @@ final class DownloadManager {
     }
 
     private func download(_ keys: [TileKey], from source: TileSource, into db: MBTiles) async {
+        if source.metaTiles > 1 { return await downloadBlocks(keys, from: source, into: db) }
         let session = TileNetwork.download
         await withTaskGroup(of: TileResult.self) { group in
             var iterator = keys.makeIterator()
@@ -268,6 +270,75 @@ final class DownloadManager {
                 }
             }
         }
+    }
+
+    /// For maps served in blocks (see `TileSource.metaTiles`): one request per block of tiles.
+    private func downloadBlocks(_ keys: [TileKey], from source: TileSource, into db: MBTiles) async {
+        let session = TileNetwork.download
+        let blocks = Dictionary(grouping: keys) { source.block(containing: $0).origin }
+            .sorted { ($0.key.z, $0.key.y, $0.key.x) < ($1.key.z, $1.key.y, $1.key.x) }
+        await withTaskGroup(of: BlockResult.self) { group in
+            var iterator = blocks.makeIterator()
+            for _ in 0..<DownloadLimits.maxConcurrentRequests {
+                guard let block = iterator.next() else { break }
+                group.addTask { await Self.fetchBlock(block.key, keys: block.value, source: source, session: session, db: db) }
+            }
+            for await result in group {
+                progress.done += result.stored + result.skipped
+                progress.failed += result.failed
+                progress.bytes += Int64(result.bytes)
+                if Task.isCancelled {
+                    group.cancelAll()
+                    continue
+                }
+                if let block = iterator.next() {
+                    if let perMinute = source.maxTilesPerMinute, result.stored > 0 {
+                        try? await Task.sleep(nanoseconds: UInt64(60_000_000_000 / perMinute))
+                    }
+                    group.addTask { await Self.fetchBlock(block.key, keys: block.value, source: source, session: session, db: db) }
+                }
+            }
+        }
+    }
+
+    private struct BlockResult: Sendable {
+        var stored = 0, skipped = 0, failed = 0, bytes = 0
+    }
+
+    nonisolated private static func fetchBlock(_ origin: TileKey, keys: [TileKey], source: TileSource,
+                                               session: URLSession, db: MBTiles) async -> BlockResult {
+        let missing = keys.filter { !db.contains($0) }
+        guard !missing.isEmpty else { return BlockResult(skipped: keys.count) }
+        let span = source.block(containing: origin).span
+        for attempt in 0..<DownloadLimits.retries {
+            if Task.isCancelled { return BlockResult() }
+            if attempt > 0 { try? await Task.sleep(nanoseconds: UInt64(attempt) * 1_500_000_000) }
+            guard let (data, response) = try? await session.data(from: source.blockURL(origin, span: span)) else { continue }
+            switch (response as? HTTPURLResponse)?.statusCode ?? 0 {
+            case 200 where TileImage.isImage(data):
+                guard let rows = TileImage.split(data, span: span, jpeg: source.storeAsJPEG) else {
+                    return BlockResult(failed: missing.count)
+                }
+                var result = BlockResult(skipped: keys.count - missing.count)
+                for k in missing {
+                    let tile = rows[k.y - origin.y][k.x - origin.x]
+                    if (try? db.insert(k, data: tile)) != nil {
+                        result.stored += 1
+                        result.bytes += tile.count
+                    } else {
+                        result.failed += 1
+                    }
+                }
+                return result
+            case 404, 204:
+                return BlockResult(skipped: keys.count)
+            case 429, 500...599:
+                continue
+            default:
+                return BlockResult(failed: missing.count)
+            }
+        }
+        return BlockResult(failed: missing.count)
     }
 
     private enum TileResult: Sendable {

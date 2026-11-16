@@ -79,6 +79,11 @@ final class TopoTileOverlay: MKTileOverlay, @unchecked Sendable {
             completion(data)
             return
         }
+        if source.metaTiles > 1 {
+            let (source, session, offlineOnly) = (source, session, offlineOnly)
+            Task { completion(await BlockTiles.shared.tile(key, source: source, session: session, offlineOnly: offlineOnly)) }
+            return
+        }
         var request = URLRequest(url: source.tileURL(key))
         if offlineOnly {
             request.cachePolicy = .returnCacheDataDontLoad
@@ -94,5 +99,54 @@ final class TopoTileOverlay: MKTileOverlay, @unchecked Sendable {
                 completion(nil)
             }
         }.resume()
+    }
+}
+
+/// Browsing a map served in blocks (see `TileSource.metaTiles`): each block is requested once,
+/// however many of its tiles MapKit asks for, and the cut-up tiles are kept in memory. The block
+/// image itself goes through the session's disk cache, so recently seen areas still show offline.
+actor BlockTiles {
+    static let shared = BlockTiles()
+    private let cache = NSCache<NSString, NSData>()
+    private var inFlight: [String: Task<[[Data]]?, Never>] = [:]
+
+    init() { cache.totalCostLimit = 48 << 20 }
+
+    func tile(_ key: TileKey, source: TileSource, session: URLSession, offlineOnly: Bool) async -> Data? {
+        if let hit = cache.object(forKey: Self.id(source, key)) { return hit as Data }
+        let (origin, span) = source.block(containing: key)
+        let blockID = "\(source.id)/b/\(origin.z)/\(origin.x)/\(origin.y)"
+        let task = inFlight[blockID] ?? Task {
+            await Self.fetch(source.blockURL(origin, span: span), span: span, session: session, offlineOnly: offlineOnly)
+        }
+        inFlight[blockID] = task
+        let rows = await task.value
+        inFlight[blockID] = nil
+        guard let rows else { return nil }
+        for (r, row) in rows.enumerated() {
+            for (c, data) in row.enumerated() {
+                let k = TileKey(z: origin.z, x: origin.x + c, y: origin.y + r)
+                cache.setObject(data as NSData, forKey: Self.id(source, k), cost: data.count)
+            }
+        }
+        return rows[key.y - origin.y][key.x - origin.x]
+    }
+
+    private static func id(_ source: TileSource, _ key: TileKey) -> NSString {
+        "\(source.id)/\(key.z)/\(key.x)/\(key.y)" as NSString
+    }
+
+    private static func fetch(_ url: URL, span: Int, session: URLSession, offlineOnly: Bool) async -> [[Data]]? {
+        var request = URLRequest(url: url)
+        if offlineOnly { request.cachePolicy = .returnCacheDataDontLoad }
+        if let (data, response) = try? await session.data(for: request),
+           (response as? HTTPURLResponse)?.statusCode == 200, TileImage.isImage(data) {
+            return TileImage.split(data, span: span)
+        }
+        // No signal: use the block if it was seen before.
+        if let cached = session.configuration.urlCache?.cachedResponse(for: request)?.data, TileImage.isImage(cached) {
+            return TileImage.split(cached, span: span)
+        }
+        return nil
     }
 }

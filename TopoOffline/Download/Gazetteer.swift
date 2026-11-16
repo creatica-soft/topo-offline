@@ -139,13 +139,21 @@ enum Gazetteer {
     }
 
     static func matches(_ place: PlaceName, tokens: [String]) -> Bool {
-        let name = normalize(place.name)
-        return tokens.allSatisfy { name.contains($0) }
+        let name = fold(normalize(place.name))
+        return tokens.allSatisfy { name.contains(fold($0)) }
+    }
+
+    /// For comparing only: drops accents and spells out ø, æ, å and ß, so "galdhopiggen" matches
+    /// "Galdhøpiggen" and "tamina" matches "Tāmina". (Server queries keep what was typed.)
+    static func fold(_ s: String) -> String {
+        s.replacingOccurrences(of: "ø", with: "o").replacingOccurrences(of: "æ", with: "ae")
+            .replacingOccurrences(of: "ß", with: "ss")
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
     }
 
     /// Best first: exact/starts-with matches, outdoor features, then closeness to the map centre.
     static func rank(_ places: [PlaceName], for text: String, near center: CLLocationCoordinate2D?) -> [PlaceName] {
-        let query = tokens(of: text).joined(separator: " ")
+        let query = fold(tokens(of: text).joined(separator: " "))
         let words = query.split(separator: " ").map(String.init)
         var seen = Set<String>()
         let unique = places.filter { p in
@@ -163,8 +171,8 @@ enum Gazetteer {
         }
         func score(_ p: PlaceName) -> Double {
             // Dual names ("Aoraki/Mount Cook") match on either part as well as the whole.
-            var names = [normalize(p.name)]
-            if p.name.contains("/") { names += p.name.split(separator: "/").map { normalize(String($0)) } }
+            var names = [fold(normalize(p.name))]
+            if p.name.contains("/") { names += p.name.split(separator: "/").map { fold(normalize(String($0))) } }
             var s = names.map(matchScore).min() ?? 3
             s += categoryWeight(p)
             if let c = center { s += log10(1 + p.distanceKm(from: c) / 10) }
@@ -185,7 +193,7 @@ enum Gazetteer {
     private static func categoryWeight(_ p: PlaceName) -> Double {
         if p.category == "TRAIL" || p.feature.contains("TRACK") || p.feature.contains("TRAIL") { return -0.7 }
         if ["MOUNTAIN", "PEAK", "HILL", "RANGE", "GORGE", "FALLS", "WATERFALL", "LOOKOUT",
-            "SUMMIT", "GAP", "ARCH"].contains(p.feature) { return -0.6 }
+            "SUMMIT", "GAP", "ARCH", "FJELL", "TOPP", "ALPINER GIPFEL", "GIPFEL", "HAUPTGIPFEL", "PASS"].contains(p.feature) { return -0.6 }
         if outdoorCategories.contains(p.category) { return -0.3 }
         if indoorCategories.contains(p.category) { return 1 }
         return 0

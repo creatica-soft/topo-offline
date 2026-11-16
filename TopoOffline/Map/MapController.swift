@@ -24,14 +24,38 @@ final class MapController {
     static let newZealand = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: -41, longitude: 173),
         span: MKCoordinateSpan(latitudeDelta: 14, longitudeDelta: 14))
+    static let canada = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: 55, longitude: -100),
+        span: MKCoordinateSpan(latitudeDelta: 30, longitudeDelta: 70))
+    static let switzerland = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: 46.8, longitude: 8.2),
+        span: MKCoordinateSpan(latitudeDelta: 1.5, longitudeDelta: 3.6))  // narrow: phones are tall
+    static let norway = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: 64.5, longitude: 13),
+        span: MKCoordinateSpan(latitudeDelta: 12, longitudeDelta: 10))
     static let lower48 = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 39, longitude: -98),
         span: MKCoordinateSpan(latitudeDelta: 28, longitudeDelta: 60))
+
+    /// The view to show a country's map (nil for the Australian maps: their coverage is used).
+    static func region(for source: TileSource) -> MKCoordinateRegion? {
+        switch source.country {
+        case "US": return lower48
+        case "CA": return canada
+        case "CH": return switzerland
+        case "NO": return norway
+        case "NZ": return newZealand
+        default: return nil
+        }
+    }
 
     /// Where the map opens: the phone's own country when the app has maps for it.
     static func startRegion(for locale: Locale = .current) -> MKCoordinateRegion {
         switch locale.region?.identifier {
         case "US", "PR", "VI": return lower48
+        case "CA": return canada
+        case "CH", "LI": return switzerland
+        case "NO": return norway
         case "NZ": return newZealand
         default: return australia
         }
