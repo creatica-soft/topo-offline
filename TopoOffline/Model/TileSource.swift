@@ -72,9 +72,10 @@ enum TileSources {
         urlTemplate: "https://maps.six.nsw.gov.au/arcgis/rest/services/public/NSW_Topo_Map/MapServer/tile/{z}/{y}/{x}",
         minZoom: 6, maxZoom: 16, suggestedDownloadZooms: 9...16,
         coverage: BoundingBox(minLat: -37.6, minLon: 140.9, maxLat: -28.1, maxLon: 153.7),
-        attribution: "© State of New South Wales (Spatial Services, DCS)",
-        licenceName: "CC BY 4.0 (per Spatial Services web services terms)",
-        licenceURL: URL(string: "https://www.spatial.nsw.gov.au/products_and_services/web_services/terms_and_conditions")!,
+        // Attribution and licence as confirmed by DCS Spatial Services (request SD-17847, November 2026).
+        attribution: "© State of New South Wales (DCS Spatial Services)",
+        licenceName: "CC BY 4.0",
+        licenceURL: URL(string: "https://www.nsw.gov.au/nsw-government/copyright")!,
         averageTileBytes: 30_000, storeAsJPEG: false,
         outline: StateOutlines.nsw)
 
