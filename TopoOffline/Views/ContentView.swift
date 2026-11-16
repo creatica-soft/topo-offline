@@ -173,7 +173,7 @@ struct ContentView: View {
                 }
             }
             .sheet(isPresented: $showSearch) {
-                SearchView(center: controller.center, offlineOnly: offlineOnly,
+                SearchView(center: controller.center, country: source.country, offlineOnly: offlineOnly,
                            onSelect: { place in
                                card = nil
                                pin = place

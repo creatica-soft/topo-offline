@@ -1,6 +1,7 @@
 import Foundation
 import MapKit
 
+setvbuf(stdout, nil, _IOLBF, 0)  // line by line, so a crash doesn't swallow the log
 let dataDir = URL(fileURLWithPath: CommandLine.arguments[1])
 func check(_ ok: Bool, _ msg: String) { print(ok ? "PASS" : "FAIL", msg); if !ok { exit(1) } }
 
@@ -53,26 +54,37 @@ let r2 = await runDownload("Mt Barney", barney, TileSources.qld, 14...16)
 check(r2.isComplete, "QLD region complete")
 
 // 2b. Place-name search
+/// Geoscience Australia's gazetteer is sometimes very slow (tens of seconds): retry rather than
+/// stop the whole test on one timeout.
+func retrying<T>(_ what: String, _ work: () async throws -> T) async throws -> T {
+    for attempt in 1...3 {
+        do { return try await work() } catch where attempt < 3 {
+            print("     \(what): \(error.localizedDescription), retrying")
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+        }
+    }
+    fatalError("unreachable")
+}
 let barneyCentre = CLLocationCoordinate2D(latitude: -28.28, longitude: 152.70)
 check(Gazetteer.tokens(of: "Mt. Barney's") == ["mount", "barneys"], "query normalising: Mt. Barney's -> mount barneys")
-let s1 = try await Gazetteer.search("mt barney", near: barneyCentre)
+let s1 = try await retrying("gazetteer") { try await Gazetteer.search("mt barney", near: barneyCentre) }
 print("     'mt barney' top 3:", s1.prefix(3).map { "\($0.name) (\($0.feature), \(String(format: "%.1f", $0.distanceKm(from: barneyCentre))) km)" })
 check(s1.first?.name == "Mount Barney" && s1.first!.distanceKm(from: barneyCentre) < 3, "'mt barney' near the mountain -> Mount Barney first")
 let cradle = CLLocationCoordinate2D(latitude: -41.68, longitude: 145.95)
-let s2 = try await Gazetteer.search("overland track", near: cradle)
+let s2 = try await retrying("gazetteer") { try await Gazetteer.search("overland track", near: cradle) }
 check(s2.first?.name == "Overland Track", "'overland track' -> \(s2.first?.name ?? "nothing") (\(s2.first?.feature ?? ""))")
-let s3 = try await Gazetteer.search("six foot", near: CLLocationCoordinate2D(latitude: -33.71, longitude: 150.31))
+let s3 = try await retrying("gazetteer") { try await Gazetteer.search("six foot", near: CLLocationCoordinate2D(latitude: -33.71, longitude: 150.31)) }
 check(s3.prefix(3).contains { $0.name == "Six Foot Track" }, "'six foot' near Katoomba -> Six Foot Track in top 3")
 let brisbane = CLLocationCoordinate2D(latitude: -27.40, longitude: 152.85)
 for q in ["D'Aguilar", "d\u{2019}aguilar", "daguilar range", "daguilar", "aguilar"] {
-    let r = try await Gazetteer.search(q, near: brisbane)
+    let r = try await retrying("gazetteer") { try await Gazetteer.search(q, near: brisbane) }
     check(r.first?.name.contains("D'Aguilar") == true, "'\(q)' -> \(r.first?.name ?? "nothing")")
 }
-let s5 = try await Gazetteer.search("oreillys", near: CLLocationCoordinate2D(latitude: -28.23, longitude: 153.13))
+let s5 = try await retrying("gazetteer") { try await Gazetteer.search("oreillys", near: CLLocationCoordinate2D(latitude: -28.23, longitude: 153.13)) }
 check(s5.contains { $0.name.hasPrefix("O'Reilly") }, "'oreillys' -> \(s5.first?.name ?? "nothing")")
-let s4 = try await Gazetteer.search("barney's gap", near: nil)
+let s4 = try await retrying("gazetteer") { try await Gazetteer.search("barney's gap", near: nil) }
 check(s4.contains { $0.name == "Barneys Gap" }, "'barney\'s gap' -> Barneys Gap")
-let areaNames = try await Gazetteer.names(in: BoundingBox(minLat: -28.37, minLon: 152.6, maxLat: -28.19, maxLon: 152.8))
+let areaNames = try await retrying("gazetteer") { try await Gazetteer.names(in: BoundingBox(minLat: -28.37, minLon: 152.6, maxLat: -28.19, maxLon: 152.8)) }
 check(areaNames.count > 20, "names in a 20 km area around Mt Barney: \(areaNames.count)")
 check(r2.namesFileName != nil, "QLD download saved its place names")
 let offlineHits = library.searchNames("barney", near: barneyCentre)
@@ -239,7 +251,11 @@ let community = CommunityCampsites.load(from: extractURL)
 check(community.sites.count > 10_000, "bundled OSM campsites: \(community.sites.count) (extract of \(community.generated ?? "?"))")
 check(CommunityCampsites.amenities(["fee": "no", "toilets": "yes", "drinking_water": "no", "dog": "leashed", "backcountry": "yes"])
       == ["Free", "Toilets", "No drinking water", "Hike-in", "Dogs allowed"], "OSM tags -> amenities")
-let officialSites = await OfficialCampgrounds.fetch()
+var officialSites = await OfficialCampgrounds.fetch()
+for _ in 0..<2 where officialSites[CampSource.gazetteer] == nil {  // the gazetteer server is sometimes very slow
+    print("     gazetteer campgrounds didn't arrive, retrying")
+    officialSites.merge(await OfficialCampgrounds.fetch()) { old, _ in old }
+}
 print("     official campgrounds: " + officialSites.map { "\($0.key) \($0.value.count)" }.sorted().joined(separator: ", "))
 check((officialSites[CampSource.nswParks]?.count ?? 0) > 500 && (officialSites[CampSource.vicmap]?.count ?? 0) > 1000
       && (officialSites[CampSource.gazetteer]?.count ?? 0) > 300, "official campgrounds from NSW parks, Vicmap and gazetteer")
@@ -537,6 +553,172 @@ do {
     check(mi.scaleBar(metersPerPoint: 30, maxPoints: 110)?.label == "2 mi", "imperial scale bar in miles")
     check(Units(.automatic, locale: Locale(identifier: "en_US")).imperial && !Units(.automatic, locale: Locale(identifier: "en_AU")).imperial,
           "automatic units follow the region")
+}
+
+// 2j. Canada, Switzerland, Norway
+do {
+    func tile(_ src: TileSource, _ lat: Double, _ lon: Double, _ z: Int) -> TileKey {
+        TileKey(z: z, x: TileMath.tileX(lon: lon, z: z), y: TileMath.tileY(lat: lat, z: z))
+    }
+    // WMS tile bounds: tile 0/0/0 is the whole Web Mercator square
+    check(TileMath.mercatorBBox(of: TileKey(z: 0, x: 0, y: 0)) == "-20037508.34,-20037508.34,20037508.34,20037508.34",
+          "WMS bbox for the world tile")
+    check(TileSources.ca.tileURL(TileKey(z: 1, x: 1, y: 0)).absoluteString.contains("bbox=0.00,0.00,20037508.34,20037508.34&width=256"),
+          "WMS bbox in the Toporama URL")
+    // Toporama in 4 × 4 blocks: one 1,024 px request serves 16 tiles
+    let b = TileSources.ca.block(containing: TileKey(z: 15, x: 5483, y: 11339))
+    check(b.origin == TileKey(z: 15, x: 5480, y: 11336) && b.span == 4
+          && TileSources.ca.blockURL(b.origin, span: b.span).absoluteString.contains("width=1024&height=1024"), "Toporama block of 4 × 4 tiles")
+    check(TileSources.ca.block(containing: TileKey(z: 1, x: 1, y: 1)).span == 2, "block shrinks at the lowest zooms")
+    let t0 = Date()
+    let blockTiles = await withTaskGroup(of: Data?.self) { group in
+        for dy in 0..<4 { for dx in 0..<4 {
+            group.addTask { await BlockTiles.shared.tile(TileKey(z: 15, x: 5480 + dx, y: 11336 + dy), source: TileSources.ca,
+                                                         session: URLSession.shared, offlineOnly: false) }
+        } }
+        var out: [Data?] = []
+        for await d in group { out.append(d) }
+        return out
+    }
+    let blockSeconds = Date().timeIntervalSince(t0)
+    check(blockTiles.count == 16 && blockTiles.allSatisfy { $0.flatMap(TileImage.decode)?.width == 256 } && blockSeconds < 15,
+          "16 Toporama tiles from one block request in \(String(format: "%.1f", blockSeconds)) s")
+    for (src, lat, lon, z) in [(TileSources.ca, 51.18, -115.57, 15), (TileSources.ch, 46.62, 8.04, 17), (TileSources.no, 61.64, 8.31, 17)] {
+        let (data, _) = try await URLSession.shared.data(from: src.tileURL(tile(src, lat, lon, z)))
+        check(TileImage.decode(data)?.width == 256, "\(src.name) tile at z\(z) decodes (\(data.count) bytes)")
+    }
+
+    for (name, lat, lon, want) in [("Banff", 51.18, -115.57, "ca-topo"), ("Vancouver", 49.25, -123.1, "ca-topo"),
+                                   ("Toronto", 43.65, -79.38, "ca-topo"), ("Montreal", 45.5, -73.57, "ca-topo"),
+                                   ("Whitehorse", 60.72, -135.05, "ca-topo"), ("Iqaluit", 63.75, -68.52, "ca-topo"),
+                                   ("Seattle", 47.6, -122.3, "us-topo"), ("Detroit", 42.33, -83.05, "us-topo"),
+                                   ("Anchorage", 61.22, -149.9, "us-topo"), ("Grindelwald", 46.62, 8.04, "ch-topo"),
+                                   ("Zermatt", 46.02, 7.75, "ch-topo"), ("Vaduz", 47.14, 9.52, "ch-topo"),
+                                   ("Oslo", 59.91, 10.75, "no-topo"), ("Tromsø", 69.65, 18.96, "no-topo"),
+                                   ("Galdhøpiggen", 61.64, 8.31, "no-topo"), ("Katoomba", -33.71, 150.31, "nsw-topo")] {
+        let got = TileSources.best(for: .init(latitude: lat, longitude: lon)).id
+        check(got == want, "\(name) -> \(got)")
+    }
+    for (name, lat, lon) in [("Stockholm", 59.33, 18.07), ("Kiruna", 67.85, 20.22), ("Milan", 45.46, 9.19),
+                             ("Munich", 48.14, 11.58), ("Annecy", 45.9, 6.13), ("Nuuk", 64.18, -51.7)] {
+        let c = CLLocationCoordinate2D(latitude: lat, longitude: lon)
+        check(![TileSources.ca, TileSources.ch, TileSources.no, TileSources.us].contains { $0.covers(c) }, "\(name) is outside all the outlines")
+    }
+
+    // Place names
+    let banffC = CLLocationCoordinate2D(latitude: 51.0, longitude: -115.6)
+    let assiniboine = try await PlaceSearch.search("mount assiniboine", near: banffC)
+    check(assiniboine.first.map { $0.name == "Mount Assiniboine" && $0.feature == "MOUNTAIN" } == true,
+          "Canada: Mount Assiniboine -> \(assiniboine.first.map { "\($0.name), \($0.kind)" } ?? "nothing")")
+    let grindelwald = CLLocationCoordinate2D(latitude: 46.62, longitude: 8.04)
+    let eiger = try await PlaceSearch.search("eiger", near: grindelwald)
+    check(eiger.first.map { $0.name == "Eiger" && $0.feature == "PEAK" } == true, "Switzerland: Eiger summit first (\(eiger.prefix(3).map { "\($0.name), \($0.kind)" }))")
+    check(CHNames.parse("<i>Alpiner Gipfel</i> <b>Eiger</b> (BE) - Grindelwald").map { "\($0.name)|\($0.kind)|\($0.canton ?? "")" }
+          == "Eiger|Alpiner Gipfel|BE", "Swiss label parsed")
+    let jotunheimen = CLLocationCoordinate2D(latitude: 61.6, longitude: 8.4)
+    let galdh = try await PlaceSearch.search("galdhøpiggen", near: jotunheimen)
+    check(galdh.first.map { $0.name == "Galdhøpiggen" && $0.state == "Lom" } == true,
+          "Norway: Galdhøpiggen -> \(galdh.first.map { "\($0.name), \($0.kind)" } ?? "nothing")")
+    check(Gazetteer.matches(PlaceName(id: "x", name: "Galdhøpiggen", feature: "", category: "", state: "", lat: 0, lon: 0),
+                            tokens: ["galdhopiggen"]), "typing without ø still matches")
+    let caBox = BoundingBox(minLat: 50.84, minLon: -115.70, maxLat: 50.90, maxLon: -115.60)
+    let caNames = try await PlaceSearch.names(in: caBox)
+    check(caNames.contains { $0.name == "Mount Assiniboine" } && !caNames.contains { $0.id.hasPrefix("US_") },
+          "Canadian names for a small area, no US ones (\(caNames.count))")
+    let noBox = BoundingBox(minLat: 61.62, minLon: 8.27, maxLat: 61.66, maxLon: 8.35)
+    let noNames = try await PlaceSearch.names(in: noBox)
+    check(noNames.contains { $0.name == "Galdhøpiggen" }, "Norwegian names for a small area (\(noNames.count))")
+    check(PlaceSearch.attribution(near: grindelwald) == CHNames.attribution && PlaceSearch.attribution(near: banffC) == CANames.attribution
+          && PlaceSearch.attribution(near: jotunheimen) == NONames.attribution, "place-name credit follows the map")
+
+    // Trails
+    let chBox = BoundingBox(minLat: 46.60, minLon: 8.00, maxLat: 46.64, maxLon: 8.06)
+    let chSegs = try await TrackSources.segments(in: chBox, layers: [TrackSources.chTrails])
+    check(chSegs.count > 50 && chSegs.allSatisfy { $0.state == "CH" && $0.points.count >= 2 },
+          "Swiss hiking trails near Grindelwald: \(chSegs.count) (\(Set(chSegs.map(\.kind)).sorted()))")
+    let noSegs = try await TrackSources.segments(in: BoundingBox(minLat: 61.48, minLon: 8.75, maxLat: 61.54, maxLon: 8.85),
+                                                 layers: [TrackSources.noTrails])
+    check(noSegs.count > 3 && noSegs.allSatisfy { $0.points.count >= 2 && abs($0.points[0].latitude - 61.5) < 0.2 },
+          "Norwegian trails near Gjendesheim: \(noSegs.count) (\(Set(noSegs.map(\.kind)).sorted()))")
+    if let longest = chSegs.max(by: { $0.points.count < $1.points.count }), longest.points.count >= 6 {
+        let pts = longest.points
+        let leg = await TrackRouter.leg(from: pts[1], to: pts[pts.count - 2], followTracks: true, snap: 40,
+                                        library: noDownloads, offlineOnly: false)
+        check(leg.followsTracks, "route along a Swiss hiking trail (\(Int(TrackPath.length(leg.points))) m)")
+    }
+
+    let lakeAgnes = try await TrackSources.search("lake agnes", near: CLLocationCoordinate2D(latitude: 51.41, longitude: -116.22))
+    if let t = lakeAgnes.first(where: { $0.name == "Lake Agnes" }) {
+        let p = await Elevation.profile(for: t, library: noDownloads, offlineOnly: false)
+        check(t.state == "CA" && (p?.ascent ?? 0) > 200, "Parks Canada trail: Lake Agnes, \(t.kind), climb \(Int(p?.ascent ?? 0)) m")
+    } else { check(false, "Lake Agnes in Parks Canada trails (found \(lakeAgnes.map(\.displayName)))") }
+
+    // Downloads: Canada allowed, Switzerland and Norway not (yet)
+    check(DownloadManager.plan(name: "x", area: chBox, source: TileSources.ch, zooms: 14...15, includeOverview: true) == nil
+          && DownloadManager.plan(name: "x", area: noBox, source: TileSources.no, zooms: 14...15, includeOverview: true) == nil,
+          "Swiss and Norwegian maps can't be saved offline yet")
+    let lakeLouise = BoundingBox(minLat: 51.410, minLon: -116.225, maxLat: 51.420, maxLon: -116.205)
+    let rc = await runDownload("Lake Louise", lakeLouise, TileSources.ca, 13...15)
+    let caTile = TileKey(z: 15, x: TileMath.tileX(lon: lakeLouise.center.longitude, z: 15), y: TileMath.tileY(lat: lakeLouise.center.latitude, z: 15))
+    check(rc.isComplete && rc.failedTiles == 0 && library.tile(sourceID: "ca-topo", key: caTile).map(TileImage.isImage) == true,
+          "Canadian area downloaded and readable offline")
+    check(library.searchNames("louise", near: lakeLouise.center).contains { $0.name.contains("Louise") }, "Canadian names saved with the area")
+    store.delete(rc)
+
+    // Named trails to search: BC, Ontario, Swiss routes, Norwegian routes
+    for (q, lat, lon, want) in [("deeks lake", 49.5, -123.2, "Deeks Lake Trail"), ("bruce trail", 44.5, -80.2, "Bruce Trail"),
+                                ("eiger trail", 46.6, 8.0, "Eiger Trail"), ("gjendesheim", 61.49, 8.81, "Gjendesheim-Bessheim")] {
+        let found = try await TrackSources.search(q, near: CLLocationCoordinate2D(latitude: lat, longitude: lon))
+        check(found.contains { ($0.name ?? "").hasPrefix(want) }, "trail search '\(q)' -> \(found.prefix(3).map { "\($0.displayName) (\($0.kind))" })")
+    }
+    // Search follows the selected map's country, and finds trails when the map is zoomed out
+    let noFar = try await TrackSources.search("bessheim", near: CLLocationCoordinate2D(latitude: 59.9, longitude: 10.7), country: "NO")
+    check(noFar.contains { $0.name == "Gjendesheim-Bessheim" }, "Norwegian route found from Oslo (nationwide): \(noFar.map(\.displayName))")
+    let caFar = try await TrackSources.search("lake agnes", near: CLLocationCoordinate2D(latitude: 55, longitude: -100), country: "CA")
+    check(caFar.contains { $0.name == "Lake Agnes" } && caFar.allSatisfy { $0.state == "CA" },
+          "Canadian trail found with the map zoomed out, Canadian sources only")
+    check(try await PlaceSearch.search("eiger", near: CLLocationCoordinate2D(latitude: -33.7, longitude: 150.3), country: "CH").first?.name == "Eiger",
+          "place search uses the selected map's country, not the map centre")
+    // A tap on the Eiger Trail gives the named route rather than an unnamed network piece
+    if let eigerTrail = try await TrackSources.search("eiger trail", near: grindelwald).first,
+       let mid = eigerTrail.segments.first?.points.dropFirst(5).first {
+        let tapped = await TrackLookup.track(at: mid, within: 25, library: OfflineTileLibrary(directory: dataDir.appendingPathComponent("empty-ch")), offlineOnly: false)
+        check(tapped?.name?.hasPrefix("Eiger Trail") == true, "tap on the Eiger Trail -> \(tapped?.displayName ?? "nothing")")
+    }
+
+    // Campgrounds: Parks Canada (one pin per campground) and BC recreation sites
+    let pc = try await OfficialCampgrounds.parksCanada()
+    check(pc.count > 100 && pc.contains { $0.name == "Tunnel Mountain Village I" }, "Parks Canada campgrounds: \(pc.count)")
+    let bc = try await OfficialCampgrounds.bcRecSites()
+    check(bc.count > 1000 && bc.contains { $0.amenities?.contains("Toilets") == true }
+          && bc.allSatisfy { $0.website?.hasPrefix("https://www.sitesandtrailsbc.ca/resource/REC") == true },
+          "BC recreation sites with campsites: \(bc.count)")
+    let bcJSON = String(decoding: try JSONEncoder().encode(bc), as: UTF8.self)
+    check(!bcJSON.contains("OPERATOR"), "no operator names in BC data")
+
+    // Regions: Canadian campgrounds are fetched only once the map has shown Canada
+    UserDefaults.standard.removeObject(forKey: "selftest-regions")
+    let regionDir = dataDir.appendingPathComponent("regions-test")
+    try? FileManager.default.createDirectory(at: regionDir, withIntermediateDirectories: true)
+    let gated = CampgroundStore(directory: regionDir, bundledExtract: nil, moreExtracts: [], regionsKey: "selftest-regions")
+    await gated.refreshIfStale(offlineOnly: false)
+    check(!gated.official.contains { $0.source == CampSource.parksCanada } && !gated.wants(.canada), "no Canadian campgrounds before the map shows Canada")
+    await gated.refreshIfStale(offlineOnly: false, area: BoundingBox(minLat: 51.0, minLon: -115.8, maxLat: 51.3, maxLon: -115.4))
+    check(gated.official.contains { $0.source == CampSource.parksCanada } && gated.wants(.canada), "Canadian campgrounds after showing Banff")
+
+    // Huts from the per-region OpenStreetMap extracts, loaded when the map shows the region
+    let resources = extractURL.deletingLastPathComponent()
+    let regional = CampgroundStore(directory: regionDir, bundledExtract: nil,
+                                   moreExtracts: [(BoundingBox(minLat: 45.8, minLon: 4.3, maxLat: 71.6, maxLon: 31.5), resources.appendingPathComponent("osm-campsites-europe.json")),
+                                                  (BoundingBox(minLat: 17.5, minLon: -180, maxLat: 84, maxLon: -52), resources.appendingPathComponent("osm-campsites-na.json"))],
+                                   regionsKey: "selftest-regions")
+    check(regional.community.isEmpty, "regional extracts aren't loaded up front")
+    await regional.loadCommunity(for: BoundingBox(minLat: 46.5, minLon: 7.9, maxLat: 46.7, maxLon: 8.2))
+    let huts = regional.community.filter { $0.kind == "Hut" }
+    check(huts.contains { $0.name.contains("Gleckstein") } && huts.contains { $0.name.contains("Gjendebu") },
+          "Swiss and Norwegian huts from OpenStreetMap (\(huts.count) huts, \(regional.community.count) places)")
+    await regional.loadCommunity(for: BoundingBox(minLat: 51.0, minLon: -115.8, maxLat: 51.3, maxLon: -115.4))
+    check(regional.community.count > 50_000, "North American extract loaded when the map shows Canada (\(regional.community.count) places)")
 }
 
 // 3. Read back via the library (as the map does)

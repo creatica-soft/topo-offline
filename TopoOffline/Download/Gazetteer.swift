@@ -37,7 +37,8 @@ enum Gazetteer {
                             "spatialRel": "esriSpatialRelIntersects"])
         }
         let found = try await firstAnswers(queries.map { q in
-            { try? await query(q, session: TileNetwork.browse, timeout: 10) }
+            // Generous: the server can take ~20 s to answer when it hasn't been used for a while.
+            { try? await query(q, session: TileNetwork.browse, timeout: 25) }
         })
         return rank(found, for: text, near: center)
     }
@@ -93,7 +94,7 @@ enum Gazetteer {
                 "spatialRel": "esriSpatialRelIntersects",
                 "orderByFields": "objectid",
                 "resultOffset": String(all.count), "resultRecordCount": String(page),
-            ], session: TileNetwork.download)
+            ], session: TileNetwork.download, timeout: 60)  // the server can take ~20 s to wake up
             all += part
             if part.count < page || all.count >= 50_000 { break }
         }

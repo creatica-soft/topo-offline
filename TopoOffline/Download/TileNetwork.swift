@@ -15,7 +15,7 @@ enum TileNetwork {
         config.httpCookieStorage = nil
         config.httpShouldSetCookies = false
         config.urlCache = URLCache(memoryCapacity: 32 << 20, diskCapacity: 300 << 20)
-        config.timeoutIntervalForRequest = 20
+        config.timeoutIntervalForRequest = 30  // some government servers take ~20 s to wake up
         config.httpMaximumConnectionsPerHost = 6
         return URLSession(configuration: config)
     }()

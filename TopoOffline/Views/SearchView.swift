@@ -9,6 +9,8 @@ struct SearchView: View {
     @Environment(RegionStore.self) private var store
 
     let center: CLLocationCoordinate2D?
+    /// The selected map's country: only its services are searched.
+    let country: String
     let offlineOnly: Bool
     let onSelect: (PlaceName) -> Void
     let onSelectTrack: (Track) -> Void
@@ -47,7 +49,7 @@ struct SearchView: View {
                 }
                 Section {
                 } footer: {
-                    Text(PlaceSearch.attribution(near: center))
+                    Text(PlaceSearch.attribution(near: center, country: country))
                 }
             }
             .safeAreaInset(edge: .top) { searchField }
@@ -118,22 +120,28 @@ struct SearchView: View {
         guard !Task.isCancelled else { return }
         searching = true
         defer { searching = false }
-        let near = center
-        async let tracksOnline: [Track] = Self.onlineTracks(query, near: near)
+        let (near, country) = (center, country)
+        // Places and tracks come from different servers: show whichever arrives first, then both.
+        async let tracksOnline: [Track]? = Self.onlineTracks(query, near: near, country: country)
+        var places = localPlaces
+        var placesFailed = false
         do {
-            let placesOnline = try await PlaceSearch.search(query, near: center)
-            let tracks = await tracksOnline
+            places = try await PlaceSearch.search(query, near: near, country: country) + localPlaces
             guard !Task.isCancelled else { return }
-            show(places: placesOnline + localPlaces, tracks: tracks + localTracks, query: query)
+            show(places: places, tracks: localTracks, query: query)
         } catch {
-            _ = await tracksOnline
-            if !Task.isCancelled { onlineFailed = true }
+            placesFailed = true
         }
+        let tracks = await tracksOnline
+        guard !Task.isCancelled else { return }
+        show(places: places, tracks: (tracks ?? []) + localTracks, query: query)
+        onlineFailed = placesFailed && tracks == nil
     }
 
-    private static func onlineTracks(_ query: String, near: CLLocationCoordinate2D?) async -> [Track] {
+    /// Nil when the track servers couldn't be reached.
+    private static func onlineTracks(_ query: String, near: CLLocationCoordinate2D?, country: String) async -> [Track]? {
         guard let near else { return [] }
-        return (try? await TrackSources.search(query, near: near)) ?? []
+        return try? await TrackSources.search(query, near: near, country: country)
     }
 
     /// Merges place names and tracks. A track from the state data replaces the gazetteer's point for
