@@ -31,6 +31,30 @@ struct TopoMapView: UIViewRepresentable {
     let controller: MapController
     /// Single tap on the map: coordinate, and a tap tolerance in metres (≈ a fingertip at this zoom).
     let onTap: (CLLocationCoordinate2D, Double) -> Void
+    /// Saved routes and recorded walks to draw; `routesKey` changes with them.
+    var routes: [SavedRoute] = []
+    var routesKey = ""
+    /// The route being planned, if any.
+    var draft: RouteDraft? = nil
+    /// The walk being recorded; `liveVersion` changes with it.
+    var liveLine: [CLLocationCoordinate2D] = []
+    var liveVersion = 0
+    /// A waypoint of the route being planned was tapped or dragged.
+    var onWaypoint: (WaypointEvent) -> Void = { _ in }
+
+    struct RouteDraft {
+        var waypoints: [CLLocationCoordinate2D]
+        var legs: [SavedRoute.Leg]
+        /// Changes with every edit (and differs between planning sessions).
+        var key: String
+        /// The highlighted point.
+        var selected: Int?
+    }
+
+    enum WaypointEvent {
+        case tap(Int)
+        case move(Int, CLLocationCoordinate2D)
+    }
 
     func makeCoordinator() -> Coordinator { Coordinator(controller: controller) }
 
@@ -64,7 +88,11 @@ struct TopoMapView: UIViewRepresentable {
         context.coordinator.onSelectSite = onSelectSite
         context.coordinator.showTrack(track, on: map)
         context.coordinator.showProfileMarker(profileMarker, on: map)
+        context.coordinator.showRoutes(routes, key: routesKey, on: map)
+        context.coordinator.showLive(liveLine, version: liveVersion, on: map)
+        context.coordinator.showDraft(draft, on: map)
         context.coordinator.onTap = onTap
+        context.coordinator.onWaypoint = onWaypoint
     }
 
     /// Two layers so the highlighted track stands out on any map: a white casing and a coloured line.
@@ -78,6 +106,31 @@ struct TopoMapView: UIViewRepresentable {
     final class RulePolygon: MKPolygon {}
 
     final class ProfileMarker: MKPointAnnotation {}
+
+    /// Saved routes (blue) and recorded walks (orange), on a white casing.
+    final class RouteCasing: MKMultiPolyline {}
+    final class RouteLine: MKMultiPolyline {}
+    final class WalkLine: MKMultiPolyline {}
+    /// The route being planned: legs along tracks solid, straight legs dashed.
+    final class DraftCasing: MKMultiPolyline {}
+    final class DraftLine: MKMultiPolyline {}
+    final class DraftStraight: MKMultiPolyline {}
+    /// The walk being recorded (red).
+    final class LiveLine: MKPolyline {}
+    final class WaypointAnnotation: MKPointAnnotation {
+        var index = 0
+        var isEnd = false
+        var isSelected = false
+    }
+    /// Drags the selected route point. It sits on the map rather than on the point's view and starts
+    /// when a drag begins near the point on screen, so it doesn't depend on MapKit delivering the
+    /// touch to the annotation view (it doesn't always). MapKit's own dragging needs its selection
+    /// and a long press.
+    final class WaypointPan: UIPanGestureRecognizer {
+        weak var point: WaypointAnnotation?
+        var offset = CGPoint.zero
+        var original = CLLocationCoordinate2D()
+    }
 
     final class SiteAnnotation: NSObject, MKAnnotation {
         let site: Campsite
@@ -98,6 +151,157 @@ struct TopoMapView: UIViewRepresentable {
         private var closedKey = ""
         private var ruleOverlays: [String: RulePolygon] = [:]
         private var marker: ProfileMarker?
+        var onWaypoint: ((WaypointEvent) -> Void)?
+        private var routeOverlays: [MKOverlay] = []
+        private var routesKey: String?
+        private var draftOverlays: [MKOverlay] = []
+        private var waypointAnnotations: [WaypointAnnotation] = []
+        private var draftKey: String?
+        private var liveOverlay: LiveLine?
+        private var liveVersion = -1
+
+        private static func polylines(_ lines: [[CLLocationCoordinate2D]]) -> [MKPolyline] {
+            lines.filter { $0.count >= 2 }.map { pts in
+                var pts = pts
+                return MKPolyline(coordinates: &pts, count: pts.count)
+            }
+        }
+
+        /// Adds overlays under the highlighted track (if any), so the selection stays on top.
+        @MainActor
+        private func addBelowHighlight(_ overlays: [MKOverlay], on map: MKMapView) {
+            for o in overlays {
+                if let below = trackOverlays.first {
+                    map.insertOverlay(o, below: below)
+                } else {
+                    map.addOverlay(o, level: .aboveLabels)
+                }
+            }
+        }
+
+        @MainActor
+        func showRoutes(_ routes: [SavedRoute], key: String, on map: MKMapView) {
+            guard key != routesKey else { return }
+            routesKey = key
+            map.removeOverlays(routeOverlays)
+            routeOverlays = []
+            guard !routes.isEmpty else { return }
+            let planned = Self.polylines(routes.filter { $0.kind != .recorded }.map(\.path))
+            let walked = Self.polylines(routes.filter { $0.kind == .recorded }.map(\.path))
+            var overlays: [MKOverlay] = [RouteCasing(planned + walked)]
+            if !planned.isEmpty { overlays.append(RouteLine(planned)) }
+            if !walked.isEmpty { overlays.append(WalkLine(walked)) }
+            addBelowHighlight(overlays, on: map)
+            routeOverlays = overlays
+        }
+
+        @MainActor
+        func showLive(_ points: [CLLocationCoordinate2D], version: Int, on map: MKMapView) {
+            guard version != liveVersion else { return }
+            liveVersion = version
+            if let old = liveOverlay { map.removeOverlay(old) }
+            liveOverlay = nil
+            guard points.count >= 2 else { return }
+            var pts = points
+            let line = LiveLine(coordinates: &pts, count: pts.count)
+            map.addOverlay(line, level: .aboveLabels)
+            liveOverlay = line
+        }
+
+        @MainActor
+        func showDraft(_ draft: RouteDraft?, on map: MKMapView) {
+            guard draft?.key != draftKey else {
+                // Same route: just move the highlight.
+                for a in waypointAnnotations where a.isSelected != (a.index == draft?.selected) {
+                    a.isSelected = a.index == draft?.selected
+                    if let view = map.view(for: a) { Self.style(view, for: a) }
+                }
+                return
+            }
+            draftKey = draft?.key
+            map.removeOverlays(draftOverlays)
+            map.removeAnnotations(waypointAnnotations)
+            draftOverlays = []
+            waypointAnnotations = []
+            guard let draft else { return }
+            let along = Self.polylines(draft.legs.filter(\.followsTracks).map(\.points))
+            let straight = Self.polylines(draft.legs.filter { !$0.followsTracks }.map(\.points))
+            if !along.isEmpty || !straight.isEmpty {
+                draftOverlays = [DraftCasing(along + straight)]
+                if !along.isEmpty { draftOverlays.append(DraftLine(along)) }
+                if !straight.isEmpty { draftOverlays.append(DraftStraight(straight)) }
+                for o in draftOverlays { map.addOverlay(o, level: .aboveLabels) }
+            }
+            for (i, c) in draft.waypoints.enumerated() {
+                let a = WaypointAnnotation()
+                a.coordinate = c
+                a.index = i
+                a.isEnd = i == 0 || i == draft.waypoints.count - 1
+                a.isSelected = i == draft.selected
+                a.title = i == 0 ? "Start" : (i == draft.waypoints.count - 1 ? "End" : "Point \(i + 1)")
+                waypointAnnotations.append(a)
+            }
+            map.addAnnotations(waypointAnnotations)
+        }
+
+        func mapView(_ mapView: MKMapView, didUpdate userLocation: MKUserLocation) {
+            guard let location = userLocation.location else { return }
+            MainActor.assumeIsolated { controller.onUserLocation?(location) }
+        }
+
+        @objc func dragWaypoint(_ g: WaypointPan) {
+            guard let map = g.view as? MKMapView else { return }
+            guard let a = g.point else {
+                map.isScrollEnabled = true
+                return
+            }
+            let touch = g.location(in: map)
+            switch g.state {
+            case .began:
+                // Keep the point where it is under the finger rather than jumping to the touch.
+                let centre = map.convert(a.coordinate, toPointTo: map)
+                g.offset = CGPoint(x: touch.x - centre.x, y: touch.y - centre.y)
+                g.original = a.coordinate
+                map.isScrollEnabled = false
+            case .changed:
+                a.coordinate = map.convert(CGPoint(x: touch.x - g.offset.x, y: touch.y - g.offset.y), toCoordinateFrom: map)
+            case .ended:
+                map.isScrollEnabled = true
+                onWaypoint?(.move(a.index, a.coordinate))
+            default:
+                map.isScrollEnabled = true
+                a.coordinate = g.original
+            }
+        }
+
+        /// A route point: a coloured dot (green start, red end, blue in between) in a fingertip-sized
+        /// tap area. The selected point is bigger, with a halo, and is the only one that can be dragged
+        /// (so a drag anywhere else always moves the map); see `WaypointPan`.
+        static func style(_ view: MKAnnotationView, for w: WaypointAnnotation) {
+            let colour: UIColor = w.index == 0 ? .systemGreen : (w.isEnd ? .systemRed : .systemBlue)
+            let dot: CGFloat = w.isSelected ? 26 : (w.isEnd ? 22 : 16)
+            let side: CGFloat = w.isSelected ? 44 : 34
+            view.image = UIGraphicsImageRenderer(size: CGSize(width: side, height: side)).image { ctx in
+                let cg = ctx.cgContext
+                let mid = side / 2
+                if w.isSelected {
+                    colour.withAlphaComponent(0.3).setFill()
+                    cg.fillEllipse(in: CGRect(x: 0, y: 0, width: side, height: side))
+                    UIColor.black.withAlphaComponent(0.25).setFill()
+                    cg.fillEllipse(in: CGRect(x: mid - dot / 2 - 1, y: mid - dot / 2 - 1, width: dot + 2, height: dot + 2))
+                }
+                UIColor.white.setFill()
+                cg.fillEllipse(in: CGRect(x: mid - dot / 2, y: mid - dot / 2, width: dot, height: dot))
+                colour.setFill()
+                let inset: CGFloat = w.isSelected ? 5 : 3
+                cg.fillEllipse(in: CGRect(x: mid - dot / 2 + inset, y: mid - dot / 2 + inset,
+                                          width: dot - 2 * inset, height: dot - 2 * inset))
+            }
+            // The selected point on top of its neighbours (their tap areas can overlap).
+            view.zPriority = w.isSelected ? .max : MKAnnotationViewZPriority(rawValue: 900)
+            view.accessibilityLabel = w.title
+            view.accessibilityTraits = w.isSelected ? [.button, .selected] : .button
+        }
 
         @MainActor
         func showProfileMarker(_ c: CLLocationCoordinate2D?, on map: MKMapView) {
@@ -190,6 +394,15 @@ struct TopoMapView: UIViewRepresentable {
                 view.zPriority = .max
                 return view
             }
+            if let w = annotation as? WaypointAnnotation {
+                let view = mapView.dequeueReusableAnnotationView(withIdentifier: "waypoint")
+                    ?? MKAnnotationView(annotation: w, reuseIdentifier: "waypoint")
+                view.annotation = w
+                Self.style(view, for: w)
+                view.canShowCallout = false
+                view.displayPriority = .required
+                return view
+            }
             guard let a = annotation as? SiteAnnotation else { return nil }  // default views for the rest
             let view = mapView.dequeueReusableAnnotationView(withIdentifier: "site") as? MKMarkerAnnotationView
                 ?? MKMarkerAnnotationView(annotation: a, reuseIdentifier: "site")
@@ -210,7 +423,11 @@ struct TopoMapView: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
-            if let a = view.annotation as? SiteAnnotation {
+            if let w = view.annotation as? WaypointAnnotation {
+                // The planner keeps track of the selection; MapKit's own would swallow the next map tap.
+                mapView.deselectAnnotation(w, animated: false)
+                onWaypoint?(.tap(w.index))
+            } else if let a = view.annotation as? SiteAnnotation {
                 onSelectSite?(a.site)
             } else if let cluster = view.annotation as? MKClusterAnnotation {
                 // Tapping a group of pins zooms in on them.
@@ -251,10 +468,33 @@ struct TopoMapView: UIViewRepresentable {
             single.delegate = self
             map.addGestureRecognizer(double)
             map.addGestureRecognizer(single)
+            let drag = WaypointPan(target: self, action: #selector(dragWaypoint(_:)))
+            drag.maximumNumberOfTouches = 1
+            drag.delegate = self
+            map.addGestureRecognizer(drag)
         }
 
         func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-            true
+            !(g is WaypointPan || other is WaypointPan)
+        }
+
+        /// Only the selected route point can be dragged, by a drag that starts on or next to it.
+        func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
+            guard let pan = g as? WaypointPan else { return true }
+            pan.point = nil
+            guard let map = pan.view as? MKMapView,
+                  let a = waypointAnnotations.first(where: \.isSelected) else { return false }
+            let now = pan.location(in: map), moved = pan.translation(in: map)
+            let start = CGPoint(x: now.x - moved.x, y: now.y - moved.y)
+            let centre = map.convert(a.coordinate, toPointTo: map)
+            guard hypot(start.x - centre.x, start.y - centre.y) <= 30 else { return false }
+            pan.point = a
+            return true
+        }
+
+        /// While a point is being dragged the map doesn't pan.
+        func gestureRecognizer(_ g: UIGestureRecognizer, shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
+            g is WaypointPan && other is UIPanGestureRecognizer
         }
 
         @objc private func handleTap(_ g: UITapGestureRecognizer) {
@@ -393,6 +633,45 @@ struct TopoMapView: UIViewRepresentable {
                 let r = MKMultiPolylineRenderer(multiPolyline: line)
                 r.strokeColor = .systemPurple
                 r.lineWidth = 5
+                r.lineCap = .round
+                r.lineJoin = .round
+                return r
+            }
+            if let casing = overlay as? RouteCasing ?? overlay as? DraftCasing {
+                let r = MKMultiPolylineRenderer(multiPolyline: casing)
+                r.strokeColor = UIColor.white.withAlphaComponent(0.85)
+                r.lineWidth = 7
+                r.lineCap = .round
+                r.lineJoin = .round
+                return r
+            }
+            if let line = overlay as? RouteLine ?? overlay as? DraftLine {
+                let r = MKMultiPolylineRenderer(multiPolyline: line)
+                r.strokeColor = .systemBlue
+                r.lineWidth = 4
+                r.lineCap = .round
+                r.lineJoin = .round
+                return r
+            }
+            if let line = overlay as? DraftStraight {
+                let r = MKMultiPolylineRenderer(multiPolyline: line)
+                r.strokeColor = .systemBlue
+                r.lineWidth = 4
+                r.lineDashPattern = [8, 6]
+                return r
+            }
+            if let line = overlay as? WalkLine {
+                let r = MKMultiPolylineRenderer(multiPolyline: line)
+                r.strokeColor = .systemOrange
+                r.lineWidth = 4
+                r.lineCap = .round
+                r.lineJoin = .round
+                return r
+            }
+            if let line = overlay as? LiveLine {
+                let r = MKPolylineRenderer(polyline: line)
+                r.strokeColor = .systemRed
+                r.lineWidth = 4
                 r.lineCap = .round
                 r.lineJoin = .round
                 return r

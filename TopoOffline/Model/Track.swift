@@ -69,15 +69,23 @@ struct Track: Identifiable, Equatable, Sendable {
 
     init?(segments: [TrackSegment]) {
         guard let first = segments.first else { return nil }
-        self.segments = segments
-        name = first.name
         // A track mixing kinds (e.g. a Great Walk using ordinary walking tracks) shows the most specific.
-        kind = segments.first(where: { $0.kind.hasPrefix("Great Walk") })?.kind ?? first.kind
-        state = first.state
-        id = first.name.map { Track.id(state: first.state, name: $0) }
+        let kind = segments.first(where: { $0.kind.hasPrefix("Great Walk") })?.kind ?? first.kind
+        let id = first.name.map { Track.id(state: first.state, name: $0) }
             ?? "segment|\(first.state)|\(first.coords.prefix(2).map { String($0) }.joined(separator: ","))"
+        self.init(id: id, name: first.name, kind: kind, state: first.state, segments: segments)
+    }
+
+    /// A line that isn't an agency track (a saved route or recorded walk), with an id of its own.
+    init(id: String, name: String?, kind: String, state: String, segments: [TrackSegment]) {
+        self.id = id
+        self.name = name
+        self.kind = kind
+        self.state = state
+        self.segments = segments
         lengthKm = segments.reduce(0) { $0 + $1.lengthMeters } / 1000
-        bbox = segments.dropFirst().reduce(first.bbox) { b, s in
+        let empty = BoundingBox(minLat: 90, minLon: 180, maxLat: -90, maxLon: -180)
+        bbox = segments.reduce(empty) { b, s in
             let o = s.bbox
             return BoundingBox(minLat: min(b.minLat, o.minLat), minLon: min(b.minLon, o.minLon),
                                maxLat: max(b.maxLat, o.maxLat), maxLon: max(b.maxLon, o.maxLon))

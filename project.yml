@@ -37,7 +37,28 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         LINZAPIKey: $(LINZ_API_KEY)
         LINZKeyIsDeveloper: $(LINZ_KEY_IS_DEVELOPER)
-        NSLocationWhenInUseUsageDescription: "Your location is shown on the map so you can see where you are, even without phone signal. It never leaves your iPhone."
+        NSLocationWhenInUseUsageDescription: "Your location is shown on the map so you can see where you are, even without phone signal. If you turn on walk recording, it's also recorded while the phone is locked. It never leaves your iPhone."
+        # Recording a walk (off unless the user turns it on) continues with the screen locked.
+        UIBackgroundModes:
+          - location
+        # Open .gpx files from Files, Mail, AirDrop and other apps.
+        LSSupportsOpeningDocumentsInPlace: false
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: GPX file
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - com.topografix.gpx
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: com.topografix.gpx
+            UTTypeDescription: GPS Exchange Format (GPX)
+            UTTypeConformsTo:
+              - public.xml
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - gpx
+              public.mime-type:
+                - application/gpx+xml
         ITSAppUsesNonExemptEncryption: false
     # Team, bundle ID and API keys come from Config/Base.xcconfig + your private Config/Secrets.xcconfig.
     configFiles:
