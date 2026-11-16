@@ -1,8 +1,8 @@
 # Topo Offline
 
 An iPhone app for bushwalkers, trampers and hikers: official topographic maps for Australia, New
-Zealand and the United States that you can save for use without phone signal, with walking tracks
-and trails, campsites, huts, closures and elevation profiles.
+Zealand, the United States, Canada, Switzerland and Norway, saved for use without phone signal,
+with walking tracks and trails, campsites, huts, closures and elevation profiles.
 
 **No account, no ads, no analytics, no tracking.** The app has no server of its own: map tiles
 and data come straight from government open-data services, and your location never leaves your
@@ -14,7 +14,9 @@ and New Zealand).
 ## Features
 
 - **Topo maps**: NSW, Queensland and Tasmania state topo maps, New Zealand's LINZ Topo50/Topo250,
-  the USGS topo map for the United States (including Alaska, Hawaii and Puerto Rico), and
+  the USGS topo map for the United States (including Alaska, Hawaii and Puerto Rico), NRCan's
+  Toporama for Canada, swisstopo's national map and Kartverket's topo map for Norway (the Swiss
+  and Norwegian maps work online only until their providers allow offline copies), and
   Geoscience Australia's 1:250k national map underneath the Australian state maps (optionally
   shown when zoomed out, with the state map taking over at walking scale).
 - **Offline areas**: download what's on screen at full detail (with the tile count and size shown
@@ -22,16 +24,18 @@ and New Zealand).
   downloaded detail enlarges the finest tiles instead of going blank. Offline mode uses only what's
   on the phone.
 - **Search**: Australia's Composite Gazetteer (about 290,000 names), the NZ Gazetteer (about
-  55,000 names, kept on the phone so it's instant and works offline) and the USGS Geographic Names
-  Information System, plus walking-track and trail names.
-- **Walking tracks and trails** (NSW, QLD, TAS, VIC, NZ, US): tap a track to highlight all of it and
+  55,000 names, kept on the phone so it's instant and works offline), the USGS Geographic Names
+  Information System, and the Canadian, Swiss and Norwegian national name registers, plus
+  walking-track and trail names.
+- **Walking tracks and trails** (NSW, QLD, TAS, VIC, NZ, US, Canada's national parks, BC and Ontario,
+  Switzerland's named hiking routes and trail network, Norway's marked routes): tap a track to highlight all of it and
   see its name, type and length. In Victoria, which has no free topo map, all tracks are drawn on
   the map.
 - **Elevation profiles**: climb, descent, highest and lowest points, and a chart you can drag
   along to see the spot on the map.
 - **Campsites, huts and closures**: official campgrounds (NSW National Parks, Vicmap, the national
   gazetteer, Victorian state forests, NZ DOC huts and campsites, US Forest Service campgrounds with
-  their open or closed status) and community campsites and
+  their open or closed status, Parks Canada and BC recreation sites) and community campsites, huts and
   caravan parks from OpenStreetMap with facilities, merged into one pin per place. Current
   closures for Victorian state forests and NZ DOC (worked out from their dates; stale records are
   ignored) and NZ freedom-camping rules.
@@ -107,6 +111,13 @@ where its data is shown.
 | US trails | USGS National Digital Trails | Public domain |
 | US place names | USGS Geographic Names Information System | Public domain |
 | US campgrounds | USDA Forest Service | Public domain |
+| Canada topo map (Toporama), place names | Natural Resources Canada | Open Government Licence – Canada |
+| Canada national park trails and campgrounds | Parks Canada | Open Government Licence – Canada |
+| BC trails and recreation sites | Recreation Sites and Trails BC | Open Government Licence – British Columbia |
+| Ontario trails | Ontario Trail Network (Land Information Ontario) | Open Government Licence – Ontario |
+| Swiss named hiking routes | Wanderland Schweiz (SchweizMobil), FEDRO and cantons | Opendata BY |
+| Switzerland national map, hiking trails, place names | © swisstopo | swisstopo free geodata terms |
+| Norway topo map, trails (Turruter), place names | © Kartverket | CC BY 4.0 |
 | Elevation | Terrain Tiles on AWS (Geoscience Australia, LINZ, USGS 3DEP and SRTM) | CC BY / public domain |
 | Community campsites | © OpenStreetMap contributors | ODbL 1.0 |
 
@@ -115,13 +126,16 @@ be told about apps that use their services, and LINZ requires your own key.
 
 ### OpenStreetMap campsite extract
 
-`TopoOffline/Resources/osm-campsites.json` is an extract of campsites and caravan parks in
-Australia and New Zealand, © OpenStreetMap contributors, available under the
-[Open Database License](https://opendatacommons.org/licenses/odbl/). It ships inside the app, so
-the app never contacts OpenStreetMap. Refresh it with one Overpass query (about a minute):
+`TopoOffline/Resources/osm-campsites*.json` are extracts of campsites, caravan parks and huts
+(Australia and New Zealand; the US and Canada; Switzerland and Norway), © OpenStreetMap
+contributors, available under the [Open Database License](https://opendatacommons.org/licenses/odbl/).
+They ship inside the app, so the app never contacts OpenStreetMap. Refresh them with one Overpass
+query per country (a few minutes in all):
 
 ```sh
-python3 -I Tools/update-osm-campsites.py TopoOffline/Resources/osm-campsites.json
+python3 -I Tools/update-osm-campsites.py anz TopoOffline/Resources/osm-campsites.json
+python3 -I Tools/update-osm-campsites.py na TopoOffline/Resources/osm-campsites-na.json
+python3 -I Tools/update-osm-campsites.py europe TopoOffline/Resources/osm-campsites-europe.json
 ```
 
 ## Project layout
