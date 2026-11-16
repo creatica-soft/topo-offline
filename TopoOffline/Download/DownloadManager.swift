@@ -108,7 +108,7 @@ final class DownloadManager {
                 let db = try MBTiles(url: store.library.fileURL(layer.fileName), create: true)
                 try db.setMetadata([
                     "name": region.name,
-                    "format": source.storeAsJPEG ? "jpg" : "png",
+                    "format": source.storedFormat,
                     "type": "baselayer",
                     "version": "1",
                     "attribution": source.attribution,
