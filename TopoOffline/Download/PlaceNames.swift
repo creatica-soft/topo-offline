@@ -382,8 +382,21 @@ enum PlaceSearch {
 
     static func isUS(_ c: CLLocationCoordinate2D?) -> Bool { country(at: c) == .us }
 
-    static func search(_ text: String, near center: CLLocationCoordinate2D?) async throws -> [PlaceName] {
-        switch country(at: center) {
+    static func country(code: String) -> Country {
+        switch code {
+        case "US": return .us
+        case "CA": return .ca
+        case "CH": return .ch
+        case "NO": return .no
+        default: return .other
+        }
+    }
+
+    /// Searches the place-name service of `country` (the selected map's), or of where the map is.
+    /// New Zealand names are searched on the phone, so there's nothing to ask a server.
+    static func search(_ text: String, near center: CLLocationCoordinate2D?, country code: String? = nil) async throws -> [PlaceName] {
+        if code == "NZ" { return [] }
+        switch code.map(country(code:)) ?? country(at: center) {
         case .us: return try await USPlaceNames.search(text, near: center)
         case .ca: return try await CANames.search(text, near: center)
         case .ch: return try await CHNames.search(text, near: center)
@@ -392,8 +405,9 @@ enum PlaceSearch {
         }
     }
 
-    static func attribution(near center: CLLocationCoordinate2D?) -> String {
-        switch country(at: center) {
+    static func attribution(near center: CLLocationCoordinate2D?, country code: String? = nil) -> String {
+        if code == "NZ" { return NZPlaceNames.attribution }
+        switch code.map(country(code:)) ?? country(at: center) {
         case .us: return USPlaceNames.attribution
         case .ca: return CANames.attribution
         case .ch: return CHNames.attribution

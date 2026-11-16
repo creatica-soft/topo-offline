@@ -25,6 +25,9 @@ struct TrackLayer: Sendable {
     let attribution: String
     /// Turns raw attributes into a (name, kind); nil skips the feature.
     let describe: @Sendable ([String: Any]) -> (name: String?, kind: String)?
+
+    /// Country code, as in `TileSource.country` (the Australian states are "AU").
+    var country: String { ["NSW", "QLD", "TAS", "VIC"].contains(state) ? "AU" : state }
 }
 
 /// Walking tracks from NSW Spatial Services, Queensland Parks and Tasmania's LIST.
@@ -306,24 +309,33 @@ enum TrackSources {
     }
 
     /// Named tracks matching `text` within about 100 km of `center`.
-    /// Named tracks matching `text` within about 100 km of `center`.
-    static func search(_ text: String, near center: CLLocationCoordinate2D) async throws -> [Track] {
+    /// Named tracks of `country` (the selected map's) matching `text`, near `center` where the
+    /// service needs an area. A source that fails is skipped; it only throws if every one failed.
+    static func search(_ text: String, near center: CLLocationCoordinate2D, country: String? = nil) async throws -> [Track] {
         let tokens = Gazetteer.serverTokens(of: text).filter { $0.count > 1 }
         guard !tokens.isEmpty, tokens.joined().count >= 3 else { return [] }
         let box = BoundingBox(minLat: center.latitude - 1, minLon: center.longitude - 1,
                               maxLat: center.latitude + 1, maxLon: center.longitude + 1)
-        let layers = all.filter { !$0.nameFields.isEmpty && $0.coverage.intersects(box) }
-        let segments = try await withThrowingTaskGroup(of: [TrackSegment].self) { group in
+        let layers = all.filter { layer in
+            guard !layer.nameFields.isEmpty else { return false }
+            if let country { return layer.country == country }
+            return layer.coverage.intersects(box)
+        }
+        let (segments, failures) = await withTaskGroup(of: [TrackSegment]?.self) { group in
             for layer in layers {
                 group.addTask {
-                    try await named(layer, text: tokens.joined(separator: " "), exact: false, tokens: tokens,
-                                    near: center, box: box, limit: 4000)
+                    try? await named(layer, text: tokens.joined(separator: " "), exact: false, tokens: tokens,
+                                     near: center, box: box, limit: 4000)
                 }
             }
             var result: [TrackSegment] = []
-            for try await part in group { result += part }
-            return result
+            var failures = 0
+            for await part in group {
+                if let part { result += part } else { failures += 1 }
+            }
+            return (result, failures)
         }
+        if failures > 0, failures == layers.count { throw URLError(.cannotLoadFromNetwork) }
         let matchTokens = Gazetteer.tokens(of: text)
         return group(segments.filter { s in
             s.name.map { n in matchTokens.allSatisfy { Gazetteer.normalize(n).contains($0) } } ?? false
@@ -372,14 +384,62 @@ enum TrackSources {
                               near center: CLLocationCoordinate2D, box: BoundingBox, limit: Int) async throws -> [TrackSegment] {
         switch layer.backend {
         case .arcGIS, .wfs:
-            return try await fetch(layer, where: "\(layer.baseWhere) AND \(nameClause(layer, tokens))",
-                                   box: box, limit: limit, session: TileNetwork.browse)
+            let clause = "\(layer.baseWhere) AND \(nameClause(layer, tokens))"
+            let near = try await fetch(layer, where: clause, box: box, limit: limit, session: TileNetwork.browse)
+            // Nothing near the map (zoomed out, or looking elsewhere): try the source's whole area.
+            if !near.isEmpty || exact { return near }
+            return try await fetch(layer, where: clause, box: layer.coverage, limit: 500, session: TileNetwork.browse)
         case let .geoAdmin(name):
             return try await findGeoAdmin(layer, name: name, text: text, exact: exact)
-        case .gmlWFS:
-            let near = BoundingBox(minLat: center.latitude - 0.25, minLon: center.longitude - 0.5,
-                                   maxLat: center.latitude + 0.25, maxLon: center.longitude + 0.5)
-            return try await fetch(layer, where: "", box: near, limit: 5000, session: TileNetwork.browse)
+        case let .gmlWFS(typeName, namespace):
+            return try await findGML(layer, typeName: typeName, namespace: namespace, text: text, exact: exact)
+        }
+    }
+
+    /// Norway's route service: routes whose name contains (or is) `text`, nationwide, using an
+    /// OGC filter on the route-name property.
+    private static func findGML(_ layer: TrackLayer, typeName: String, namespace: String,
+                                text: String, exact: Bool) async throws -> [TrackSegment] {
+        let prefix = typeName.split(separator: ":").first.map(String.init) ?? "app"
+        let escaped = text.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: "!", with: "!!").replacingOccurrences(of: "*", with: "!*")
+        let pattern = exact ? escaped : "*\(escaped.split(separator: " ").joined(separator: "*"))*"
+        let filter = """
+        <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:\(prefix)="\(namespace)">\
+        <fes:PropertyIsLike wildCard="*" singleChar="." escapeChar="!" matchCase="false">\
+        <fes:ValueReference>\(prefix):fotruteInfo/\(prefix):FotruteInfo/\(prefix):rutenavn</fes:ValueReference>\
+        <fes:Literal>\(pattern)</fes:Literal></fes:PropertyIsLike></fes:Filter>
+        """
+        var comps = URLComponents(url: layer.queryURL, resolvingAgainstBaseURL: false)!
+        comps.queryItems = [
+            URLQueryItem(name: "service", value: "WFS"), URLQueryItem(name: "version", value: "2.0.0"),
+            URLQueryItem(name: "request", value: "GetFeature"), URLQueryItem(name: "typeNames", value: typeName),
+            URLQueryItem(name: "namespaces", value: "xmlns(\(prefix),\(namespace))"),
+            URLQueryItem(name: "srsName", value: "urn:ogc:def:crs:EPSG::4326"),
+            URLQueryItem(name: "count", value: "2000"), URLQueryItem(name: "filter", value: filter),
+        ]
+        // "+" in a query is read as a space by some servers; encode it.
+        comps.percentEncodedQuery = comps.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        let (data, response) = try await TileNetwork.browse.data(from: comps.url!)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+        let reader = GMLLineReader(featureElement: String(typeName.split(separator: ":").last ?? ""))
+        let parser = XMLParser(data: data)
+        parser.delegate = reader
+        guard parser.parse() else { throw URLError(.cannotParseResponse) }
+        let wanted = Gazetteer.fold(Gazetteer.normalize(text))
+        return reader.features.flatMap { f -> [TrackSegment] in
+            // A piece can be on several routes: name it after the one that was searched for.
+            var attributes = f.attributes
+            let names = (attributes["rutenavn"] as? [String]) ?? []
+            if let match = names.first(where: { Gazetteer.fold(Gazetteer.normalize($0)).contains(wanted) }) {
+                attributes["rutenavn"] = [match]
+            }
+            guard let described = layer.describe(attributes) else { return [] }
+            return f.lines.filter { $0.count >= 4 }.map { line in
+                var coords: [Double] = []
+                for i in stride(from: 0, to: line.count - 1, by: 2) { coords += [round5(line[i + 1]), round5(line[i])] }
+                return TrackSegment(layer: layer.id, name: described.name, kind: described.kind, state: layer.state, coords: coords)
+            }
         }
     }
 
