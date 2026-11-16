@@ -27,6 +27,7 @@ struct ContentView: View {
     private var units: Units { Units(UnitSetting(rawValue: unitSetting) ?? .automatic) }
     @State private var showDownload = false
     @State private var showRegions = false
+    @State private var showSettings = false
     @State private var switchNotice: String?
     @State private var showSearch = false
     @State private var pin: PlaceName?
@@ -214,6 +215,19 @@ struct ContentView: View {
                 let profile = await Elevation.profile(for: t, library: store.library, offlineOnly: offlineOnly)
                 guard !Task.isCancelled else { return }
                 trackProfile = profile.map { .ready($0) } ?? .unavailable
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView().environment(\.units, units)
+            }
+            .onChange(of: sourceID) {
+                // A map picked in Settings for somewhere else: go there.
+                if let c = controller.center, !source.covers(c) {
+                    if let region = MapController.region(for: source) {
+                        controller.mapView?.setRegion(region, animated: true)
+                    } else {
+                        controller.show(source.coverage)
+                    }
+                }
             }
             .sheet(isPresented: $showRegions) {
                 RegionsView { region in
@@ -463,33 +477,16 @@ struct ContentView: View {
 
     private var topBar: some View {
         HStack {
-            Menu {
-                Picker("Map", selection: $sourceID) {
-                    ForEach(TileSources.all) { s in
-                        Text(s.name).tag(s.id)
-                    }
-                }
-                Divider()
-                if source.usesNationalOverview {
-                    Toggle(isOn: $nationalWhenZoomedOut) {
-                        Text("National map when zoomed out")
-                        Text("State topo appears from about \(units.roundDistance(10_000)) across")
-                    }
-                }
-                Picker(selection: $unitSetting) {
-                    Text("Automatic (\(Units(.automatic).imperial ? "miles, feet" : "km, metres"))").tag(UnitSetting.automatic.rawValue)
-                    Text("Metric (km, metres)").tag(UnitSetting.metric.rawValue)
-                    Text("Imperial (miles, feet)").tag(UnitSetting.imperial.rawValue)
-                } label: {
-                    Label("Units", systemImage: "ruler")
-                }
-                .pickerStyle(.menu)
+            Button {
+                showSettings = true
             } label: {
-                Label(source.name, systemImage: "map")
+                Image(systemName: "gearshape")
                     .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 14).padding(.vertical, 9)
-                    .background(.regularMaterial, in: Capsule())
+                    .frame(width: 38, height: 38)
+                    .background(.regularMaterial, in: Circle())
             }
+            .accessibilityLabel("Settings")
+            .accessibilityValue(source.name)
             Button {
                 showSearch = true
             } label: {
@@ -607,11 +604,13 @@ struct ContentView: View {
             }
     }
 
-    /// Credit for what's on screen: the chosen map, plus the national map only when it's shown under it.
+    /// The map's name and credit for what's on screen: the chosen map, plus the national map only
+    /// when it's shown under it.
     private var attribution: String {
-        source.id == TileSources.overview.id || !source.usesNationalOverview
+        let credit = source.id == TileSources.overview.id || !source.usesNationalOverview
             ? source.attribution
             : "\(source.attribution) · \(TileSources.overview.attribution)"
+        return "\(source.name) · \(credit)"
     }
 }
 

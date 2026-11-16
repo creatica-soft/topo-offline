@@ -41,9 +41,6 @@ struct RegionsView: View {
                     }
                 }
 
-                Section {
-                    NavigationLink("About, privacy and map credits") { AboutView() }
-                }
             }
             .navigationTitle("Offline maps")
             .toolbar {
