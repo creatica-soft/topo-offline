@@ -21,8 +21,8 @@ enum TrackLookup {
         let probe = BoundingBox(minLat: c.latitude - dLat, minLon: c.longitude - dLon,
                                 maxLat: c.latitude + dLat, maxLon: c.longitude + dLon)
         guard let nearby = try? await TrackSources.segments(in: probe),
-              let segment = nearby.min(by: { $0.distanceMeters(to: c) < $1.distanceMeters(to: c) }),
-              segment.distanceMeters(to: c) <= meters else { return nil }
+              let segment = TrackSources.preferNamed(nearby.map { ($0, $0.distanceMeters(to: c)) }.filter { $0.1 <= meters })
+        else { return nil }
         guard let name = segment.name,
               let full = try? await TrackSources.segments(named: name, state: segment.state, near: c),
               !full.isEmpty else {

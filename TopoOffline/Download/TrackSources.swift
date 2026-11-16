@@ -1,11 +1,15 @@
 import Foundation
 import CoreLocation
 
-/// A government track dataset. NSW, QLD and TAS serve ArcGIS REST; Victoria serves OGC WFS (GeoServer).
+/// A government track dataset. NSW, QLD, TAS, NZ and the US serve ArcGIS REST; Victoria serves
+/// OGC WFS (GeoServer, GeoJSON); Switzerland the geo.admin.ch identify service; Norway a WFS that
+/// only speaks GML.
 struct TrackLayer: Sendable {
     enum Backend: Sendable {
         case arcGIS
         case wfs(typeName: String, geometryField: String, sortField: String)
+        case geoAdmin(layer: String)
+        case gmlWFS(typeName: String, namespace: String)
     }
     let id: String
     let state: String
@@ -151,11 +155,139 @@ enum TrackSources {
             return (name, by.map { "Trail · \($0)" } ?? "Trail")
         })
 
-    static let all = [nswPaths, qldWalking, qldGreatWalk, tasTracks, vicTrails, nzTracks, usTrails]
+    /// Switzerland: the signposted hiking trail network (swissTLM3D Wanderwege). Pieces have no
+    /// names, so they can be tapped and routed along but not searched.
+    static let chTrails = TrackLayer(
+        id: "ch-trails", state: "CH",
+        queryURL: URL(string: "https://api3.geo.admin.ch/rest/services/api/MapServer/identify")!,
+        backend: .geoAdmin(layer: "ch.swisstopo.swisstlm3d-wanderwege"),
+        baseWhere: "", nameFields: [], outFields: "", orderField: "",
+        coverage: TileSources.ch.coverage,
+        attribution: "Hiking trails © swisstopo",
+        describe: { a in
+            switch a["hikingtype"] as? String {
+            case "Bergwanderweg": return (nil, "Mountain hiking trail")
+            case "Alpinwanderweg": return (nil, "Alpine route")
+            default: return (nil, "Hiking trail")
+            }
+        })
+
+    /// Norway: walking routes from Kartverket's Turrutebasen (CC BY 4.0). A piece can belong to
+    /// several routes; it's named after the first one with a name ("Gjendesheim-Bessheim").
+    /// The service can't filter on names, so name search filters the routes around the map.
+    static let noTrails = TrackLayer(
+        id: "no-trails", state: "NO",
+        queryURL: URL(string: "https://wfs.geonorge.no/skwms1/wfs.turogfriluftsruter")!,
+        backend: .gmlWFS(typeName: "app:Fotrute",
+                         namespace: "http://skjema.geonorge.no/SOSI/produktspesifikasjon/TurOgFriluftsruter/20171210"),
+        baseWhere: "", nameFields: ["rutenavn"], outFields: "", orderField: "",
+        coverage: TileSources.no.coverage,
+        attribution: "Trails: Turruter © Kartverket, CC BY 4.0",
+        describe: { a in
+            func values(_ key: String) -> [String] { (a[key] as? [String]) ?? [] }
+            let name = values("rutenavn").first { !$0.isEmpty && $0 != "Ukjent" }
+            var kind = values("merking").first == "JA" ? "Marked trail" : "Trail"
+            // DNT's grades: green, blue, red, black.
+            let grades = ["G": "easy", "B": "moderate", "R": "demanding", "S": "expert"]
+            if let grade = values("gradering").compactMap({ grades[$0] }).first { kind += " (\(grade))" }
+            if let by = values("vedlikeholdsansvarlig").first?.components(separatedBy: " | ").first, !by.isEmpty {
+                kind += " · \(by)"
+            }
+            return (name, kind)
+        })
+
+    /// Switzerland: SchweizMobil's named hiking routes ("Wanderland": Via Alpina stages, Eiger
+    /// Trail…), published by the Federal Roads Office as Opendata BY. They run along the trail
+    /// network above, and give its trails names for tapping and searching.
+    static let chRoutes = TrackLayer(
+        id: "ch-routes", state: "CH",
+        queryURL: URL(string: "https://api3.geo.admin.ch/rest/services/api/MapServer/identify")!,
+        backend: .geoAdmin(layer: "ch.astra.wanderland"),
+        baseWhere: "", nameFields: ["chmobil_title"], outFields: "", orderField: "",
+        coverage: TileSources.ch.coverage,
+        attribution: "Hiking routes: Wanderland Schweiz (SchweizMobil), FEDRO and cantons",
+        describe: { a in
+            let raw = ((a["chmobil_title"] as? String) ?? (a["label"] as? String) ?? "").trimmingCharacters(in: .whitespaces)
+            guard !raw.isEmpty else { return nil }
+            let kind: String
+            switch a["chmobil_route_number"] as? Int {
+            case let n? where n < 10: kind = "National hiking route \(n)"
+            case let n? where n < 100: kind = "Regional hiking route \(n)"
+            case let n?: kind = "Local hiking route \(n)"
+            case nil: kind = "Hiking route"
+            }
+            return (raw, kind)
+        })
+
+    /// Canada: official trails in national parks, historic sites and marine conservation areas
+    /// (Parks Canada "Trails APCA", Open Government Licence – Canada). There's no national dataset
+    /// for trails outside federal parks.
+    static let caTrails = TrackLayer(
+        id: "ca-parks", state: "CA",
+        queryURL: URL(string: "https://services2.arcgis.com/wCOMu5IS7YdSyPNx/ArcGIS/rest/services/vw_Trails_Sentiers_APCA_V2_FGP/FeatureServer/0/query")!,
+        baseWhere: "Official_Officiel=1",
+        nameFields: ["Name_Official_e"],
+        outFields: "Name_Official_e,Restr_Sum_Ete_Interd",
+        orderField: "OBJECTID",
+        coverage: TileSources.ca.coverage,
+        attribution: "Trails: Parks Canada, Open Government Licence – Canada",
+        describe: { a in
+            let raw = (a["Name_Official_e"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+            // Closed to summer use: a ski or snowshoe trail.
+            let winterOnly = (a["Restr_Sum_Ete_Interd"] as? Int) == 1
+            return (raw.isEmpty ? nil : raw, winterOnly ? "Winter trail · Parks Canada" : "Trail · Parks Canada")
+        })
+
+    /// British Columbia: Recreation Sites and Trails BC trails (Open Government Licence – BC).
+    static let bcTrails = TrackLayer(
+        id: "bc-trails", state: "CA",
+        queryURL: URL(string: "https://openmaps.gov.bc.ca/geo/pub/wfs")!,
+        backend: .wfs(typeName: "pub:WHSE_FOREST_TENURE.FTEN_RECREATION_LINES_SVW", geometryField: "GEOMETRY", sortField: "OBJECTID"),
+        baseWhere: "LIFE_CYCLE_STATUS_CODE='ACTIVE'",
+        nameFields: ["PROJECT_NAME"],
+        outFields: "PROJECT_NAME",
+        orderField: "OBJECTID",
+        coverage: BoundingBox(minLat: 48.2, minLon: -139.1, maxLat: 60.0, maxLon: -114.0),
+        attribution: "Trails: Recreation Sites and Trails BC, Open Government Licence – British Columbia",
+        describe: { a in
+            let raw = (a["PROJECT_NAME"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+            // Names are often in capitals ("DEEKS LAKE TRAIL").
+            let name = raw.isEmpty ? nil : (raw == raw.uppercased() ? titleCase(raw) : raw)
+            return (name, "Trail · BC Recreation Sites and Trails")
+        })
+
+    /// Ontario: the Ontario Trail Network (Open Government Licence – Ontario), walking trails only.
+    static let onTrails = TrackLayer(
+        id: "on-trails", state: "CA",
+        queryURL: URL(string: "https://ws.lioservices.lrc.gov.on.ca/arcgis1071a/rest/services/LIO_OPEN_DATA/LIO_Open04/MapServer/19/query")!,
+        baseWhere: "(PERMITTED_USES LIKE '%Hiking%' OR PERMITTED_USES LIKE '%Walking%')",
+        nameFields: ["TRAIL_NAME"],
+        outFields: "TRAIL_NAME,TRAIL_ASSOCIATION",
+        orderField: "OBJECTID",
+        coverage: BoundingBox(minLat: 41.6, minLon: -95.2, maxLat: 56.9, maxLon: -74.3),
+        attribution: "Trails: Ontario Trail Network, Open Government Licence – Ontario",
+        describe: { a in
+            let raw = (a["TRAIL_NAME"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+            let by = (a["TRAIL_ASSOCIATION"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+            return (raw.isEmpty ? nil : raw, by.isEmpty ? "Trail" : "Trail · \(by)")
+        })
+
+    static let all = [nswPaths, qldWalking, qldGreatWalk, tasTracks, vicTrails, nzTracks, usTrails,
+                      chTrails, chRoutes, noTrails, caTrails, bcTrails, onTrails]
 
     static func layers(for state: String) -> [TrackLayer] { all.filter { $0.state == state } }
 
     static func attribution(for state: String) -> String? { layers(for: state).first?.attribution }
+
+    /// Every credit for a country (several layers can cover one: Parks Canada, BC, Ontario).
+    static func attributions(for state: String) -> [String] { layers(for: state).map(\.attribution) }
+
+    /// The credit for a track: from the data layer its pieces came from (falls back to the state).
+    static func attribution(for track: Track) -> String? {
+        let ids = Set(track.segments.map(\.layer))
+        let credits = all.filter { ids.contains($0.id) }.map(\.attribution)
+        return credits.isEmpty ? attribution(for: track.state) : credits.joined(separator: " · ")
+    }
 
     // MARK: - Queries
 
@@ -174,17 +306,18 @@ enum TrackSources {
     }
 
     /// Named tracks matching `text` within about 100 km of `center`.
+    /// Named tracks matching `text` within about 100 km of `center`.
     static func search(_ text: String, near center: CLLocationCoordinate2D) async throws -> [Track] {
         let tokens = Gazetteer.serverTokens(of: text).filter { $0.count > 1 }
         guard !tokens.isEmpty, tokens.joined().count >= 3 else { return [] }
         let box = BoundingBox(minLat: center.latitude - 1, minLon: center.longitude - 1,
                               maxLat: center.latitude + 1, maxLon: center.longitude + 1)
-        let layers = all.filter { $0.coverage.intersects(box) }
+        let layers = all.filter { !$0.nameFields.isEmpty && $0.coverage.intersects(box) }
         let segments = try await withThrowingTaskGroup(of: [TrackSegment].self) { group in
             for layer in layers {
                 group.addTask {
-                    try await fetch(layer, where: "\(layer.baseWhere) AND \(nameClause(layer, tokens))",
-                                    box: box, limit: 4000, session: TileNetwork.browse)
+                    try await named(layer, text: tokens.joined(separator: " "), exact: false, tokens: tokens,
+                                    near: center, box: box, limit: 4000)
                 }
             }
             var result: [TrackSegment] = []
@@ -204,12 +337,22 @@ enum TrackSources {
         let box = BoundingBox(minLat: center.latitude - 1.5, minLon: center.longitude - 1.5,
                               maxLat: center.latitude + 1.5, maxLon: center.longitude + 1.5)
         var result: [TrackSegment] = []
-        for layer in layers(for: state) {
-            result += try await fetch(layer, where: "\(layer.baseWhere) AND \(nameClause(layer, tokens))",
-                                      box: box, limit: 10_000, session: TileNetwork.browse)
+        for layer in layers(for: state) where !layer.nameFields.isEmpty {
+            result += try await named(layer, text: name, exact: true, tokens: tokens, near: center, box: box, limit: 10_000)
         }
         let wanted = Gazetteer.normalize(name)
         return result.filter { $0.name.map(Gazetteer.normalize) == wanted }
+    }
+
+    /// The tapped segment among (segment, distance) candidates: the nearest, unless a named one is
+    /// nearly as close. Named routes often run along unnamed network pieces (Switzerland), and
+    /// the name is what the user wants to see.
+    static func preferNamed(_ candidates: [(TrackSegment, Double)]) -> TrackSegment? {
+        guard let nearest = candidates.min(by: { $0.1 < $1.1 }) else { return nil }
+        if nearest.0.name != nil { return nearest.0 }
+        let named = candidates.filter { $0.0.name != nil }.min(by: { $0.1 < $1.1 })
+        if let named, named.1 <= nearest.1 + 15 { return named.0 }
+        return nearest.0
     }
 
     /// Groups segments into tracks by state + name (unnamed segments are left out).
@@ -222,6 +365,54 @@ enum TrackSources {
         return byID.values.compactMap { Track(segments: $0) }
     }
 
+    /// Segments whose name matches, by whatever means the layer's service offers: a name filter
+    /// for ArcGIS and GeoServer, geo.admin's `find`, or (Norway, whose service can't filter on
+    /// names) every route around the map, filtered by the caller.
+    private static func named(_ layer: TrackLayer, text: String, exact: Bool, tokens: [String],
+                              near center: CLLocationCoordinate2D, box: BoundingBox, limit: Int) async throws -> [TrackSegment] {
+        switch layer.backend {
+        case .arcGIS, .wfs:
+            return try await fetch(layer, where: "\(layer.baseWhere) AND \(nameClause(layer, tokens))",
+                                   box: box, limit: limit, session: TileNetwork.browse)
+        case let .geoAdmin(name):
+            return try await findGeoAdmin(layer, name: name, text: text, exact: exact)
+        case .gmlWFS:
+            let near = BoundingBox(minLat: center.latitude - 0.25, minLon: center.longitude - 0.5,
+                                   maxLat: center.latitude + 0.25, maxLon: center.longitude + 0.5)
+            return try await fetch(layer, where: "", box: near, limit: 5000, session: TileNetwork.browse)
+        }
+    }
+
+    /// geo.admin.ch `find`: features of `name` whose name field contains (or equals) `text`.
+    private static func findGeoAdmin(_ layer: TrackLayer, name: String, text: String, exact: Bool) async throws -> [TrackSegment] {
+        guard let field = layer.nameFields.first else { return [] }
+        var comps = URLComponents(string: "https://api3.geo.admin.ch/rest/services/api/MapServer/find")!
+        comps.queryItems = [
+            URLQueryItem(name: "layer", value: name), URLQueryItem(name: "searchText", value: text),
+            URLQueryItem(name: "searchField", value: field), URLQueryItem(name: "contains", value: exact ? "false" : "true"),
+            URLQueryItem(name: "returnGeometry", value: "true"), URLQueryItem(name: "geometryFormat", value: "geojson"),
+            URLQueryItem(name: "sr", value: "4326"),
+        ]
+        let (data, response) = try await TileNetwork.browse.data(from: comps.url!)
+        guard (response as? HTTPURLResponse)?.statusCode == 200,
+              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw URLError(.badServerResponse) }
+        return geoAdminSegments(layer, json["results"] as? [[String: Any]] ?? [])
+    }
+
+    private static func geoAdminSegments(_ layer: TrackLayer, _ features: [[String: Any]]) -> [TrackSegment] {
+        var result: [TrackSegment] = []
+        for f in features {
+            guard let described = layer.describe(f["properties"] as? [String: Any] ?? f["attributes"] as? [String: Any] ?? [:]),
+                  let geometry = f["geometry"] as? [String: Any] else { continue }
+            for line in geoJSONLines(geometry) where line.count >= 2 {
+                let coords = line.flatMap { $0.count >= 2 ? [round5($0[0]), round5($0[1])] : [] }
+                result.append(TrackSegment(layer: layer.id, name: described.name, kind: described.kind,
+                                           state: layer.state, coords: coords))
+            }
+        }
+        return result
+    }
+
     // MARK: - Helpers
 
     private static func nameClause(_ layer: TrackLayer, _ tokens: [String]) -> String {
@@ -230,6 +421,7 @@ enum TrackSources {
                 switch layer.backend {
                 case .arcGIS: return "UPPER(\(field)) LIKE '%\(t.uppercased())%'"
                 case .wfs: return "\(field) ILIKE '%\(t)%'"
+                case .geoAdmin, .gmlWFS: return "1=1"  // these layers have no names to search
                 }
             }.joined(separator: " OR ") + ")"
         }.joined(separator: " AND ")
@@ -282,7 +474,94 @@ enum TrackSources {
         case let .wfs(typeName, geometryField, sortField):
             return try await fetchWFS(layer, typeName: typeName, geometryField: geometryField, sortField: sortField,
                                       filter: clause, box: box, limit: limit, session: session)
+        case let .geoAdmin(name):
+            return try await fetchGeoAdmin(layer, name: name, box: box, limit: limit, session: session)
+        case let .gmlWFS(typeName, namespace):
+            return try await fetchGML(layer, typeName: typeName, namespace: namespace, box: box, limit: limit, session: session)
         }
+    }
+
+    /// geo.admin.ch identify over the box, as GeoJSON (at most 200 features a page).
+    private static func fetchGeoAdmin(_ layer: TrackLayer, name: String, box: BoundingBox,
+                                      limit: Int, session: URLSession) async throws -> [TrackSegment] {
+        var result: [TrackSegment] = []
+        var offset = 0
+        let page = 200
+        let extent = "\(box.minLon),\(box.minLat),\(box.maxLon),\(box.maxLat)"
+        while offset < limit {
+            var comps = URLComponents(url: layer.queryURL, resolvingAgainstBaseURL: false)!
+            comps.queryItems = [
+                URLQueryItem(name: "geometryType", value: "esriGeometryEnvelope"),
+                URLQueryItem(name: "geometry", value: extent),
+                URLQueryItem(name: "mapExtent", value: extent),
+                URLQueryItem(name: "imageDisplay", value: "1000,1000,96"),
+                URLQueryItem(name: "tolerance", value: "0"),
+                URLQueryItem(name: "layers", value: "all:\(name)"),
+                URLQueryItem(name: "sr", value: "4326"),
+                URLQueryItem(name: "geometryFormat", value: "geojson"),
+                URLQueryItem(name: "returnGeometry", value: "true"),
+                URLQueryItem(name: "limit", value: String(page)),
+                URLQueryItem(name: "offset", value: String(offset)),
+            ]
+            let (data, response) = try await session.data(from: comps.url!)
+            guard (response as? HTTPURLResponse)?.statusCode == 200,
+                  let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw URLError(.badServerResponse)
+            }
+            let features = json["results"] as? [[String: Any]] ?? []
+            result += geoAdminSegments(layer, features)
+            if features.count < page { break }
+            offset += features.count
+        }
+        return result
+    }
+
+    private static func geoJSONLines(_ geometry: [String: Any]) -> [[[Double]]] {
+        switch geometry["type"] as? String {
+        case "LineString": return [(geometry["coordinates"] as? [[Double]]) ?? []]
+        case "MultiLineString": return (geometry["coordinates"] as? [[[Double]]]) ?? []
+        default: return []
+        }
+    }
+
+    /// OGC WFS 2.0 GetFeature as GML 3.2, in EPSG:4326 (latitude first), paged.
+    private static func fetchGML(_ layer: TrackLayer, typeName: String, namespace: String, box: BoundingBox,
+                                 limit: Int, session: URLSession) async throws -> [TrackSegment] {
+        var result: [TrackSegment] = []
+        var start = 0
+        let page = 1000
+        let prefix = typeName.split(separator: ":").first.map(String.init) ?? "app"
+        while start < limit {
+            var comps = URLComponents(url: layer.queryURL, resolvingAgainstBaseURL: false)!
+            comps.queryItems = [
+                URLQueryItem(name: "service", value: "WFS"), URLQueryItem(name: "version", value: "2.0.0"),
+                URLQueryItem(name: "request", value: "GetFeature"), URLQueryItem(name: "typeNames", value: typeName),
+                URLQueryItem(name: "namespaces", value: "xmlns(\(prefix),\(namespace))"),
+                URLQueryItem(name: "srsName", value: "urn:ogc:def:crs:EPSG::4326"),
+                URLQueryItem(name: "bbox", value: "\(box.minLat),\(box.minLon),\(box.maxLat),\(box.maxLon),urn:ogc:def:crs:EPSG::4326"),
+                URLQueryItem(name: "count", value: String(page)), URLQueryItem(name: "startIndex", value: String(start)),
+            ]
+            let (data, response) = try await session.data(from: comps.url!)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+            let reader = GMLLineReader(featureElement: String(typeName.split(separator: ":").last ?? ""))
+            let parser = XMLParser(data: data)
+            parser.delegate = reader
+            guard parser.parse() else { throw URLError(.cannotParseResponse) }
+            for f in reader.features {
+                guard let described = layer.describe(f.attributes) else { continue }
+                for line in f.lines where line.count >= 4 {
+                    // posList is "lat lon lat lon …"; segments store lon, lat.
+                    var coords: [Double] = []
+                    coords.reserveCapacity(line.count)
+                    for i in stride(from: 0, to: line.count - 1, by: 2) { coords += [round5(line[i + 1]), round5(line[i])] }
+                    result.append(TrackSegment(layer: layer.id, name: described.name, kind: described.kind,
+                                               state: layer.state, coords: coords))
+                }
+            }
+            if reader.features.count < page { break }
+            start += reader.features.count
+        }
+        return result
     }
 
     /// OGC WFS 2.0 GetFeature as GeoJSON, filtered with CQL (GeoServer).
@@ -388,5 +667,47 @@ enum TrackSources {
             offset += features.count
         }
         return result
+    }
+}
+
+/// Reads features from a GML 3.2 feature collection: each feature's `posList` lines, plus its
+/// simple text properties by local name, as lists ("rutenavn" can appear once per route).
+private final class GMLLineReader: NSObject, XMLParserDelegate {
+    struct Feature {
+        var lines: [[Double]] = []
+        var attributes: [String: Any] = [:]
+    }
+    let featureElement: String
+    private(set) var features: [Feature] = []
+    private var current: Feature?
+    private var text = ""
+
+    init(featureElement: String) { self.featureElement = featureElement }
+
+    private func local(_ name: String) -> String { String(name.split(separator: ":").last ?? Substring(name)) }
+
+    func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?,
+                qualifiedName: String?, attributes: [String: String] = [:]) {
+        if local(name) == featureElement { current = Feature() }
+        text = ""
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) { text += string }
+
+    func parser(_ parser: XMLParser, didEndElement name: String, namespaceURI: String?, qualifiedName: String?) {
+        let element = local(name)
+        if element == featureElement {
+            if let f = current { features.append(f) }
+            current = nil
+        } else if current != nil {
+            let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if element == "posList" {
+                current?.lines.append(value.split(whereSeparator: { $0 == " " || $0 == "\n" }).compactMap { Double($0) })
+            } else if !value.isEmpty {
+                let previous = (current?.attributes[element] as? [String]) ?? []
+                current?.attributes[element] = previous + [value]
+            }
+        }
+        text = ""
     }
 }

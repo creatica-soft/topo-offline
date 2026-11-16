@@ -112,12 +112,9 @@ final class OfflineTileLibrary: @unchecked Sendable {
         let dLat = meters / 110_540, dLon = meters / (111_320 * cos(c.latitude * .pi / 180))
         let probe = BoundingBox(minLat: c.latitude - dLat, minLon: c.longitude - dLon,
                                 maxLat: c.latitude + dLat, maxLon: c.longitude + dLon)
-        var best: (TrackSegment, Double)?
-        for s in allTrackSegments where s.bbox.intersects(probe) {
-            let d = s.distanceMeters(to: c)
-            if d <= meters, d < (best?.1 ?? .infinity) { best = (s, d) }
-        }
-        return best?.0
+        let nearby = allTrackSegments.filter { $0.bbox.intersects(probe) }.map { ($0, $0.distanceMeters(to: c)) }
+            .filter { $0.1 <= meters }
+        return TrackSources.preferNamed(nearby)
     }
 
     /// Downloaded segments of one state inside `box` (de-duplicated across overlapping areas).
