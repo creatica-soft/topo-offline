@@ -131,7 +131,27 @@ enum TrackSources {
     /// Only DOC tracks marked closed (for the closures snapshot).
     static let nzClosedTracks = docTrackLayer(id: "nz-doc-closed", where: "CharName2='USER_STATUS' AND CharValue2='CLSD'")
 
-    static let all = [nswPaths, qldWalking, qldGreatWalk, tasTracks, vicTrails, nzTracks]
+    /// United States: USGS National Digital Trails (NPS, Forest Service, BLM, state and local
+    /// trails), public domain. Land trails open to walkers (or with no rule recorded).
+    static let usTrails = TrackLayer(
+        id: "us-trails", state: "US",
+        queryURL: URL(string: "https://carto.nationalmap.gov/arcgis/rest/services/transportation/MapServer/37/query")!,
+        baseWhere: "trailtype='Terra Trail' AND (hikerpedestrian IS NULL OR hikerpedestrian NOT IN ('N','No'))",
+        nameFields: ["name"],
+        outFields: "name,primarytrailmaintainer",
+        orderField: "objectid",
+        coverage: TileSources.usCoverage,
+        attribution: "Trails: USGS National Digital Trails (public domain)",
+        describe: { a in
+            let raw = (a["name"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+            let name = raw.isEmpty ? nil : raw
+            let maintainers = ["NPS": "NPS", "FS": "Forest Service", "BLM": "BLM", "FWS": "Fish & Wildlife",
+                               "State": "State", "USACE": "Army Corps"]
+            let by = (a["primarytrailmaintainer"] as? String).flatMap { maintainers[$0] }
+            return (name, by.map { "Trail · \($0)" } ?? "Trail")
+        })
+
+    static let all = [nswPaths, qldWalking, qldGreatWalk, tasTracks, vicTrails, nzTracks, usTrails]
 
     static func layers(for state: String) -> [TrackLayer] { all.filter { $0.state == state } }
 

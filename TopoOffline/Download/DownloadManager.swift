@@ -225,7 +225,7 @@ final class DownloadManager {
             return true
         }
         do {
-            let names = try await Gazetteer.names(in: region.bbox)
+            let names = try await PlaceSearch.names(in: region.bbox)
             let file = "\(region.id.uuidString)-names.json"
             try JSONEncoder().encode(names).write(to: store.library.fileURL(file), options: .atomic)
             region.namesFileName = file

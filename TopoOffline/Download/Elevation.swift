@@ -7,7 +7,7 @@ import ImageIO
 /// SRTM-based 30 m data in Australia (Geoscience Australia), LINZ 8 m data in New Zealand.
 /// Tiles are saved with area downloads (`TileSources.terrain`), so profiles also work offline.
 enum Elevation {
-    static let attribution = "Elevation: © Commonwealth of Australia (Geoscience Australia); Crown copyright LINZ, CC BY 3.0 NZ; SRTM data courtesy of the U.S. Geological Survey. Terrain Tiles on AWS."
+    static let attribution = "Elevation: © Commonwealth of Australia (Geoscience Australia); Crown copyright LINZ, CC BY 3.0 NZ; SRTM and 3DEP data courtesy of the U.S. Geological Survey. Terrain Tiles on AWS."
 
     struct Profile: Equatable, Sendable {
         /// Distance from the start in metres, elevation in metres, and position, per sample.

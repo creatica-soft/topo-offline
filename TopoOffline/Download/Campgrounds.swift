@@ -1,18 +1,63 @@
 import Foundation
 
-/// Official campground locations that carry little more than a name: NSW National Parks camping
-/// areas, Vicmap "camp ground" features (including Parks Victoria parks), and "camp ground" entries
-/// in the national place-name gazetteer (TAS, SA, WA, NT, ACT). Small, so fetched in one go.
+/// Official campground locations: NSW National Parks camping areas, Vicmap "camp ground" features
+/// (including Parks Victoria parks), and "camp ground" entries in the national place-name gazetteer
+/// (TAS, SA, WA, NT, ACT), which carry little more than a name; and US Forest Service campgrounds
+/// (with open/closed status, season and booking page). Small enough to fetch in one go.
 enum OfficialCampgrounds {
-    static func fetch(session: URLSession = TileNetwork.browse) async -> [String: [Campsite]] {
+    /// The Australian sources, plus the US Forest Service when `includeUS`.
+    static func fetch(includeUS: Bool = false, session: URLSession = TileNetwork.browse) async -> [String: [Campsite]] {
         async let nsw = try? nswParks(session: session)
         async let vic = try? vicmap(session: session)
         async let ga = try? gazetteer(session: session)
+        async let us = includeUS ? try? usfs(session: session) : nil
         var out: [String: [Campsite]] = [:]
         if let v = await nsw { out[CampSource.nswParks] = v }
         if let v = await vic { out[CampSource.vicmap] = v }
         if let v = await ga { out[CampSource.gazetteer] = v }
+        if let v = await us { out[CampSource.usfs] = v }
         return out
+    }
+
+    /// US Forest Service campgrounds (about 3,500).
+    static func usfs(session: URLSession = TileNetwork.browse) async throws -> [Campsite] {
+        let url = URL(string: "https://apps.fs.usda.gov/arcx/rest/services/EDW/EDW_RecreationOpportunities_01/MapServer/0/query")!
+        let features = try await arcgis(url, where: "markeractivity='Campground Camping'",
+                                        fields: "recareaid,recareaname,forestname,openstatus,feedescription,recareaurl,open_season_start,open_season_end",
+                                        session: session)
+        var seen = Set<String>()
+        return features.compactMap { item in
+            let (a, lon, lat) = item
+            guard let name = (a["recareaname"] as? String)?.trimmingCharacters(in: .whitespaces), !name.isEmpty,
+                  lat != 0 || lon != 0 else { return nil }
+            let id = "usfs-camp-\(a["recareaid"] ?? name)"
+            guard seen.insert(id).inserted else { return nil }
+            var detail = [a["forestname"] as? String].compactMap { $0 }
+            if let season = usfsSeason(start: a["open_season_start"] as? String, end: a["open_season_end"] as? String) {
+                detail.append(season)
+            }
+            let status = (a["openstatus"] as? String)?.lowercased() ?? ""
+            let closure: ClosureInfo? = switch status {
+            case "closed": ClosureInfo(reason: "Closed", details: usfsClosedNote)
+            case "temporarily closed": ClosureInfo(reason: "Temporarily closed", details: usfsClosedNote)
+            default: nil
+            }
+            let fees = (a["feedescription"] as? String) ?? ""
+            return Campsite(id: id, name: name, kind: "Campsite", camping: true, fee: fees.contains("$"),
+                            closure: closure, lat: lat, lon: lon,
+                            detail: detail.isEmpty ? nil : detail.joined(separator: " · "),
+                            source: CampSource.usfs, website: a["recareaurl"] as? String)
+        }
+    }
+
+    static let usfsClosedNote = "The Forest Service lists this campground as closed (often for the season). Check its Forest Service page for opening dates."
+
+    /// "Open May – Oct. 31", "Open year round"; nil when the season isn't given.
+    static func usfsSeason(start: String?, end: String?) -> String? {
+        let s = start?.trimmingCharacters(in: .whitespaces) ?? "", e = end?.trimmingCharacters(in: .whitespaces) ?? ""
+        guard !s.isEmpty, s.count <= 25, e.count <= 25 else { return nil }
+        if s.lowercased().hasPrefix("year") { return "Open year round" }
+        return e.isEmpty ? "Open from \(s)" : "Open \(s) – \(e)"
     }
 
     private static func nswParks(session: URLSession) async throws -> [Campsite] {

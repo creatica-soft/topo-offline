@@ -36,15 +36,23 @@ enum Gazetteer {
                             "geometryType": "esriGeometryEnvelope", "inSR": "4326",
                             "spatialRel": "esriSpatialRelIntersects"])
         }
-        // The server is sometimes slow on broad queries ("track" matches thousands of names). Use
-        // what has arrived 2 s after the first answer (or 10 s at most), and only fail if nothing did.
+        let found = try await firstAnswers(queries.map { q in
+            { try? await query(q, session: TileNetwork.browse, timeout: 10) }
+        })
+        return rank(found, for: text, near: center)
+    }
+
+    /// Runs search queries in parallel. Name servers are sometimes slow on broad queries ("track"
+    /// matches thousands of names), so this uses what has arrived 2 s after the first answer (or
+    /// when all are in), and only fails if nothing arrived. A query returns nil when it failed.
+    static func firstAnswers(_ jobs: [@Sendable () async -> [PlaceName]?]) async throws -> [PlaceName] {
         enum Part { case result([PlaceName]?), deadline }
-        let parts2: [[PlaceName]?] = await withTaskGroup(of: Part.self) { group in
-            for q in queries {
-                group.addTask { .result(try? await query(q, session: TileNetwork.browse, timeout: 10)) }
+        let parts: [[PlaceName]?] = await withTaskGroup(of: Part.self) { group in
+            for job in jobs {
+                group.addTask { .result(await job()) }
             }
             var all: [[PlaceName]?] = []
-            var waitingFor = queries.count
+            var waitingFor = jobs.count
             var deadlineSet = false
             for await part in group {
                 switch part {
@@ -66,9 +74,9 @@ enum Gazetteer {
             }
             return all
         }
-        let answered = parts2.compactMap { $0 }
+        let answered = parts.compactMap { $0 }
         guard !answered.isEmpty else { throw URLError(.timedOut) }
-        return rank(answered.flatMap { $0 }, for: text, near: center)
+        return answered.flatMap { $0 }
     }
 
     // MARK: - Names for an offline area
@@ -176,7 +184,8 @@ enum Gazetteer {
 
     private static func categoryWeight(_ p: PlaceName) -> Double {
         if p.category == "TRAIL" || p.feature.contains("TRACK") || p.feature.contains("TRAIL") { return -0.7 }
-        if ["MOUNTAIN", "PEAK", "HILL", "RANGE", "GORGE", "FALLS", "WATERFALL", "LOOKOUT"].contains(p.feature) { return -0.6 }
+        if ["MOUNTAIN", "PEAK", "HILL", "RANGE", "GORGE", "FALLS", "WATERFALL", "LOOKOUT",
+            "SUMMIT", "GAP", "ARCH"].contains(p.feature) { return -0.6 }
         if outdoorCategories.contains(p.category) { return -0.3 }
         if indoorCategories.contains(p.category) { return 1 }
         return 0

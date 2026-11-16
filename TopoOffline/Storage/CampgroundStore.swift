@@ -4,7 +4,8 @@ import Observation
 
 /// Campgrounds from all sources, merged for display:
 ///  1. "rich" sites with facilities/closures (Victorian state forests, NZ DOC) from `ParkInfoStore`,
-///  2. official names-only campgrounds (NSW parks, Vicmap, gazetteer), saved and refreshed fortnightly,
+///  2. official campgrounds (NSW parks, Vicmap, gazetteer; US Forest Service once the map has shown
+///     the US), saved and refreshed fortnightly,
 ///  3. community campsites from the bundled OpenStreetMap extract.
 /// The same campground often appears in several sources, so nearby duplicates are folded together.
 @MainActor
@@ -16,6 +17,7 @@ final class CampgroundStore {
 
     @ObservationIgnored private let fileURL: URL
     @ObservationIgnored private var refreshing = false
+    @ObservationIgnored private var lastUSAttempt: Date?
     static let maxAge: TimeInterval = 14 * 24 * 3600
 
     init(directory: URL = OfflineTileLibrary.defaultDirectory,
@@ -30,13 +32,29 @@ final class CampgroundStore {
         communityDate = loaded.generated
     }
 
-    func refreshIfStale(offlineOnly: Bool) async {
+    var hasUSSites: Bool { official.contains { $0.source == CampSource.usfs } }
+
+    /// Refreshes the saved campgrounds when they're over a fortnight old. US sites are fetched only
+    /// once the map has shown the US (`area`), so people elsewhere never download them.
+    func refreshIfStale(offlineOnly: Bool, area: BoundingBox? = nil) async {
         guard !offlineOnly, !refreshing else { return }
+        let hasUS = hasUSSites
+        let wantsUS = hasUS || (area?.intersects(TileSources.usCoverage) ?? false)
         let modified = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-        if let modified, Date().timeIntervalSince(modified) < Self.maxAge, !official.isEmpty { return }
+        let fresh = (modified.map { Date().timeIntervalSince($0) < Self.maxAge } ?? false) && !official.isEmpty
+        let missingUS = wantsUS && !hasUS
+        if fresh && !missingUS { return }
+        // Don't retry a failed US fetch on every map move.
+        if fresh, let last = lastUSAttempt, Date().timeIntervalSince(last) < 600 { return }
         refreshing = true
         defer { refreshing = false }
-        let fetched = await OfficialCampgrounds.fetch()
+        if missingUS { lastUSAttempt = Date() }
+        let fetched: [String: [Campsite]]
+        if fresh {
+            fetched = (try? await OfficialCampgrounds.usfs()).map { [CampSource.usfs: $0] } ?? [:]
+        } else {
+            fetched = await OfficialCampgrounds.fetch(includeUS: wantsUS)
+        }
         guard !fetched.isEmpty else { return }
         // Keep the previous data for any source that failed this time.
         var bySource = Dictionary(grouping: official, by: { $0.source ?? "" })

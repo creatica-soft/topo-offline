@@ -444,6 +444,81 @@ do {
     check(RouteStore(directory: routesDir, shownKey: "selftest-shown").routes.isEmpty, "routes deleted")
 }
 
+// 2i. United States: USGS topo, trails, GNIS place names, Forest Service campgrounds; units
+do {
+    let yosemite = CLLocationCoordinate2D(latitude: 37.73, longitude: -119.57)
+    func usTile(_ z: Int) -> TileKey {
+        TileKey(z: z, x: TileMath.tileX(lon: yosemite.longitude, z: z), y: TileMath.tileY(lat: yosemite.latitude, z: z))
+    }
+    let (z16, _) = try await URLSession.shared.data(from: TileSources.us.tileURL(usTile(16)))
+    check(TileImage.isImage(z16) && TileImage.decode(z16)?.width == 256, "USGS topo tile at z16 decodes (\(z16.count) bytes)")
+    let (_, r17) = try await URLSession.shared.data(from: TileSources.us.tileURL(usTile(17)))
+    check((r17 as? HTTPURLResponse)?.statusCode == 404, "USGS topo has nothing at z17 (maxZoom 16 is right)")
+
+    for (name, lat, lon, want) in [("Yosemite", 37.73, -119.57, "us-topo"), ("Seattle", 47.6, -122.3, "us-topo"),
+                                   ("Detroit", 42.33, -83.05, "us-topo"), ("El Paso", 31.76, -106.49, "us-topo"), ("Denali", 63.07, -151.0, "us-topo"),
+                                   ("Mauna Kea", 19.82, -155.47, "us-topo"), ("Katoomba", -33.71, 150.31, "nsw-topo"),
+                                   ("Uluru", -25.34, 131.03, "ga-topo")] {
+        let got = TileSources.best(for: .init(latitude: lat, longitude: lon)).id
+        check(got == want, "\(name) -> \(got)")
+    }
+    for (name, lat, lon) in [("Vancouver", 49.25, -123.1), ("Toronto", 43.65, -79.38), ("Montreal", 45.5, -73.57),
+                             ("Windsor", 42.28, -83.0), ("Tijuana", 32.5, -117.0), ("Ciudad Juárez", 31.69, -106.42), ("Whitehorse", 60.72, -135.05)] {
+        check(!TileSources.us.covers(.init(latitude: lat, longitude: lon)), "\(name) is outside the US outline")
+    }
+
+    let mist = try await TrackSources.search("mist trail", near: yosemite)
+    if let t = mist.first(where: { $0.name == "Mist Trail" }) {
+        check(t.state == "US" && t.kind.hasPrefix("Trail"), "US trail found: \(t.displayName), \(t.kind), \(t.segments.count) pieces")
+        if let p = await Elevation.profile(for: t, library: noDownloads, offlineOnly: false) {
+            print("     Mist Trail: \(String(format: "%.1f", p.lengthKm)) km, up \(Int(p.ascent)) m, \(Int(p.lowest))–\(Int(p.highest)) m")
+            check(p.highest > p.lowest + 200, "Mist Trail elevation profile (climbs past Vernal Fall)")
+        } else { check(false, "Mist Trail elevation profile") }
+        let line = TrackPath.chain(t.segments.map(\.points)).path
+        let s = TrackPath.sample(line, maxSamples: 60, minStep: 10)
+        let leg = await TrackRouter.leg(from: s.points[1], to: s.points[s.points.count - 2], followTracks: true, snap: 40,
+                                        library: noDownloads, offlineOnly: false)
+        check(leg.followsTracks, "route along the Mist Trail (\(Int(TrackPath.length(leg.points))) m)")
+    } else { check(false, "Mist Trail in USGS trails (found: \(mist.map(\.displayName)))") }
+
+    let halfDome = try await PlaceSearch.search("half dome", near: yosemite)
+    check(halfDome.first.map { $0.name == "Half Dome" && $0.state == "CA" && $0.feature == "SUMMIT" } == true,
+          "GNIS: Half Dome near Yosemite -> \(halfDome.first.map { "\($0.name), \($0.kind)" } ?? "nothing")")
+    let box = BoundingBox(minLat: 37.72, minLon: -119.56, maxLat: 37.77, maxLon: -119.50)
+    let boxNames = try await PlaceSearch.names(in: box)
+    check(boxNames.contains { $0.name == "Half Dome" }, "GNIS names for a small Yosemite area (\(boxNames.count))")
+    check(PlaceSearch.attribution(near: yosemite) == USPlaceNames.attribution
+          && PlaceSearch.attribution(near: katoombaC) == Gazetteer.attribution, "place-name credit follows the map")
+
+    // A small area around Vernal Fall, downloaded: map, names, trails and elevation all work offline
+    let vernal = BoundingBox(minLat: 37.722, minLon: -119.555, maxLat: 37.735, maxLon: -119.535)
+    let ry = await runDownload("Vernal Fall", vernal, TileSources.us, 14...16)
+    check(ry.isComplete && ry.failedTiles == 0 && !ry.layers.contains { $0.sourceID == TileSources.overview.id }
+          && ry.layers.contains { $0.sourceID == "terrain" }, "US area downloaded (USGS topo + elevation, no Australian overview)")
+    let yTile = TileKey(z: 16, x: TileMath.tileX(lon: vernal.center.longitude, z: 16), y: TileMath.tileY(lat: vernal.center.latitude, z: 16))
+    check(library.tile(sourceID: "us-topo", key: yTile).map(TileImage.isImage) == true, "USGS tile readable offline")
+    check(library.searchNames("vernal fall", near: yosemite).contains { $0.name == "Vernal Fall" }, "offline search finds Vernal Fall")
+    let offlineMist = library.searchTracks("mist trail").first { $0.name == "Mist Trail" }
+    check(offlineMist != nil, "Mist Trail saved with the area")
+    if let offlineMist {
+        let p = await Elevation.profile(for: offlineMist, library: library, offlineOnly: true)
+        check(p != nil, "Mist Trail profile offline (\(p.map { "up \(Int($0.ascent)) m" } ?? "none"))")
+        let pts = TrackPath.chain(offlineMist.segments.map(\.points)).path
+        let s = TrackPath.sample(pts, maxSamples: 40, minStep: 10)
+        let leg = await TrackRouter.leg(from: s.points[1], to: s.points[s.points.count / 2], followTracks: true, snap: 40,
+                                        library: library, offlineOnly: true)
+        check(leg.followsTracks, "offline route along the Mist Trail")
+    }
+    store.delete(ry)
+
+    let usfs = try await OfficialCampgrounds.usfs()
+    let closed = usfs.filter { $0.closure != nil }.count
+    check(usfs.count > 3000 && closed > 0 && usfs.contains { $0.website?.hasPrefix("https://www.fs.usda.gov") == true },
+          "Forest Service campgrounds: \(usfs.count), \(closed) closed")
+    check(OfficialCampgrounds.usfsSeason(start: "May", end: "Oct. 31") == "Open May – Oct. 31"
+          && OfficialCampgrounds.usfsSeason(start: "Year Round", end: nil) == "Open year round", "campground season text")
+}
+
 // Units
 do {
     let mi = Units.usCustomary, km = Units.metric

@@ -20,7 +20,7 @@ struct ContentView: View {
     @State private var importMessage: String?
 
     @State private var controller = MapController()
-    @AppStorage("sourceID") private var sourceID = TileSources.nsw.id
+    @AppStorage("sourceID") private var sourceID = TileSources.defaultSource().id
     @AppStorage("offlineOnly") private var offlineOnly = false
     @AppStorage("nationalWhenZoomedOut") private var nationalWhenZoomedOut = true
     @AppStorage("units") private var unitSetting = UnitSetting.automatic.rawValue
@@ -152,6 +152,11 @@ struct ContentView: View {
                 refreshVisibleTracks()
                 if let area = controller.visibleArea, ParkInfoStore.covers(area) {
                     Task { await parkInfo.refreshIfStale(offlineOnly: offlineOnly) }
+                }
+                // US Forest Service campgrounds load the first time the map shows the US.
+                if let area = controller.visibleArea, controller.zoomLevel >= 6,
+                   area.intersects(TileSources.usCoverage), !campgrounds.hasUSSites {
+                    Task { await campgrounds.refreshIfStale(offlineOnly: offlineOnly, area: area) }
                 }
                 loadNZNamesIfNeeded()
             }
@@ -354,10 +359,13 @@ struct ContentView: View {
     /// When the map moves out of the selected state's map into another state, switch to that
     /// state's map. (The national map is left alone if the user picked it.)
     private func followStateMaps() {
-        guard let area = controller.visibleArea, controller.zoomLevel >= 7,
+        guard let area = controller.visibleArea, controller.zoomLevel >= 3,
               source.id != TileSources.overview.id else { return }
         let best = TileSources.best(for: area.center, preferring: source)
         guard best.id != source.id, best.id != TileSources.overview.id else { return }
+        // State maps take over at about state scale; a country map with its own zoomed-out levels
+        // (USGS, LINZ) can take over from the continent view.
+        guard controller.zoomLevel >= 7 || !best.usesNationalOverview else { return }
         sourceID = best.id
         // Only announce it when the state map is actually on screen.
         if !nationalWhenZoomedOut || controller.zoomLevel >= Double(TileSources.detailFromZoom) {

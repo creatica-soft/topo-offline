@@ -47,7 +47,7 @@ struct SearchView: View {
                 }
                 Section {
                 } footer: {
-                    Text(Gazetteer.attribution)
+                    Text(PlaceSearch.attribution(near: center))
                 }
             }
             .safeAreaInset(edge: .top) { searchField }
@@ -121,7 +121,7 @@ struct SearchView: View {
         let near = center
         async let tracksOnline: [Track] = Self.onlineTracks(query, near: near)
         do {
-            let placesOnline = try await Gazetteer.search(query, near: center)
+            let placesOnline = try await PlaceSearch.search(query, near: center)
             let tracks = await tracksOnline
             guard !Task.isCancelled else { return }
             show(places: placesOnline + localPlaces, tracks: tracks + localTracks, query: query)
