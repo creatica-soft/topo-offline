@@ -44,7 +44,7 @@ struct TrackCard: View {
                     case nil:
                         Text(length).font(.subheadline.weight(.medium)).monospacedDigit()
                     }
-                    if let credit = TrackSources.attribution(for: track.state) {
+                    if let credit = TrackSources.attribution(for: track) {
                         Text(credit)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
