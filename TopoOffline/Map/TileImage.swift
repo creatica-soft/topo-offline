@@ -6,11 +6,12 @@ import UniformTypeIdentifiers
 /// Small image helpers built on ImageIO/CoreGraphics so they work off the main thread.
 enum TileImage {
     static func isImage(_ data: Data) -> Bool {
-        guard data.count > 8 else { return false }
-        let b = [UInt8](data.prefix(4))
-        let png = b == [0x89, 0x50, 0x4E, 0x47]
+        guard data.count > 12 else { return false }
+        let b = [UInt8](data.prefix(12))
+        let png = b[0..<4] == [0x89, 0x50, 0x4E, 0x47]
         let jpeg = b[0] == 0xFF && b[1] == 0xD8
-        return png || jpeg
+        let webp = b[0..<4] == [0x52, 0x49, 0x46, 0x46] && b[8..<12] == [0x57, 0x45, 0x42, 0x50]  // RIFF....WEBP
+        return png || jpeg || webp
     }
 
     static func decode(_ data: Data) -> CGImage? {

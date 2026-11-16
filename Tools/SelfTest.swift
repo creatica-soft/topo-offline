@@ -226,6 +226,11 @@ if TileSources.nz.isAvailable {
         if (resp as? HTTPURLResponse)?.statusCode == 200, TileImage.isImage(data) { have.append(z) }
     }
     print("     LINZ topo-raster zooms with tiles at Tongariro: \(have) (TileSource.nz.maxZoom = \(TileSources.nz.maxZoom))")
+    let nzKey = TileKey(z: 15, x: TileMath.tileX(lon: 175.65, z: 15), y: TileMath.tileY(lat: -39.13, z: 15))
+    let (nzTile, _) = try await URLSession.shared.data(from: TileSources.nz.tileURL(nzKey))
+    let nzImage = TileImage.decode(nzTile)
+    check(TileSources.nz.storedFormat == "webp" && nzImage?.width == 256 && TileImage.overzoom(parent: nzTile, levels: 2, offsetX: 1, offsetY: 3) != nil,
+          "NZ WebP tile decodes and enlarges (\(nzTile.count) bytes)")
 }
 
 // 2g. Campgrounds: official, community (bundled OpenStreetMap extract) and NZ freedom-camping rules

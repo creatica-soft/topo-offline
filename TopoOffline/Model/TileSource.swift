@@ -27,6 +27,11 @@ struct TileSource: Identifiable, Hashable, Sendable {
     let averageTileBytes: Int
     /// Large PNG tiles are re-encoded to JPEG when stored offline (≈3× smaller).
     let storeAsJPEG: Bool
+    /// Tile format as written to the MBTiles `format` metadata.
+    var storedFormat: String {
+        if storeAsJPEG { return "jpg" }
+        return urlTemplate.contains(".webp") ? "webp" : "png"
+    }
     /// Optional rough outline (e.g. a state border) used to decide which map to show for a spot.
     /// Coverage rectangles of neighbouring states overlap a lot; the outline settles which one applies.
     var outline: [LonLat] = []
@@ -113,17 +118,19 @@ enum TileSources {
     /// New Zealand: LINZ Topo50 (and Topo250 when zoomed out). Needs a LINZ Basemaps key.
     /// LINZ serves tiles to zoom 18, but Topo50's real detail ends at 15 (16+ are enlargements),
     /// so 15 is the top: downloads are 4× smaller and the app enlarges beyond it itself.
+    /// WebP at LINZ's request (much cheaper for them to serve): ~20 KB a tile vs ~150 KB as PNG,
+    /// visually the same, and stored as-is since it's already half the size of our JPEG re-encode.
     static let nz = TileSource(
         id: "nz-topo",
         name: "NZ Topo50",
         coverageName: "New Zealand",
-        urlTemplate: "https://basemaps.linz.govt.nz/v1/tiles/topo-raster/WebMercatorQuad/{z}/{x}/{y}.png?api={key}",
+        urlTemplate: "https://basemaps.linz.govt.nz/v1/tiles/topo-raster/WebMercatorQuad/{z}/{x}/{y}.webp?api={key}",
         minZoom: 5, maxZoom: 15, suggestedDownloadZooms: 9...15,
         coverage: BoundingBox(minLat: -47.4, minLon: 166.3, maxLat: -34.3, maxLon: 178.7),
-        attribution: "© Toitū Te Whenua LINZ, CC BY 4.0",
-        licenceName: "CC BY 4.0 (LINZ Basemaps terms of use)",
-        licenceURL: URL(string: "https://www.linz.govt.nz/guidance/data-service/linz-basemaps-guide/linz-basemaps-terms-use")!,
-        averageTileBytes: 50_000, storeAsJPEG: true,  // PNG tiles are ~160 KB
+        attribution: "© LINZ CC BY 4.0",  // the wording LINZ's Basemaps attribution example uses
+        licenceName: "LINZ copyright",
+        licenceURL: URL(string: "https://www.linz.govt.nz/copyright")!,
+        averageTileBytes: 20_000, storeAsJPEG: false,
         usesNationalOverview: false,
         maxTilesPerMinute: Secrets.linzKeyIsDeveloperKey ? nil : 900)
 
