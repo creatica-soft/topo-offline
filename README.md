@@ -8,6 +8,9 @@ closures and elevation profiles.
 and data come straight from government open-data services, and your location never leaves your
 phone. This repository is the complete source, so you can check that for yourself.
 
+**[Get it on the App Store](https://apps.apple.com/au/app/topo-offline/id6833853505)** (Australia
+and New Zealand).
+
 ## Features
 
 - **Topo maps**: NSW, Queensland and Tasmania state topo maps, New Zealand's LINZ Topo50/Topo250,
