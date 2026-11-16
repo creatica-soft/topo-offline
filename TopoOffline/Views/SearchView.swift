@@ -151,6 +151,7 @@ struct SearchView: View {
 private struct ResultRow: View {
     let place: PlaceName
     let center: CLLocationCoordinate2D?
+    @Environment(\.units) private var units
 
     var body: some View {
         HStack(spacing: 12) {
@@ -183,6 +184,7 @@ private struct ResultRow: View {
     }
 
     private func distance(_ km: Double) -> String {
-        km < 10 ? String(format: "%.1f km", km) : String(format: "%.0f km", km)
+        km * 1000 < 10 * (units.imperial ? Units.metersPerMile : 1000)
+            ? units.distance(km * 1000) : units.roundDistance(km * 1000)
     }
 }

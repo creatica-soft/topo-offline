@@ -3,6 +3,7 @@ import SwiftUI
 /// Choose how much detail to download for the area currently on screen.
 struct DownloadSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.units) private var units
     @Environment(DownloadManager.self) private var downloads
 
     let visibleArea: BoundingBox
@@ -86,7 +87,7 @@ struct DownloadSheet: View {
                         }
                     }
                     if let box = visibleArea.intersection(source.coverage) {
-                        LabeledContent("Size", value: String(format: "%.0f × %.0f km", box.widthKm, box.heightKm))
+                        LabeledContent("Size", value: "\(units.roundDistance(box.widthKm * 1000)) × \(units.roundDistance(box.heightKm * 1000))")
                     }
                 }
                 Section {

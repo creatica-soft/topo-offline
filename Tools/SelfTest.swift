@@ -444,6 +444,26 @@ do {
     check(RouteStore(directory: routesDir, shownKey: "selftest-shown").routes.isEmpty, "routes deleted")
 }
 
+// Units
+do {
+    let mi = Units.usCustomary, km = Units.metric
+    check(mi.distance(1609.344) == "1.0 mi" && mi.distance(30) == "100 ft" && mi.distance(200_000) == "124 mi",
+          "imperial distances: \(mi.distance(1609.344)), \(mi.distance(30)), \(mi.distance(200_000))")
+    check(km.distance(850) == "850 m" && km.distance(1234) == "1.2 km" && km.distance(150_000) == "150 km",
+          "metric distances: \(km.distance(850)), \(km.distance(1234)), \(km.distance(150_000))")
+    check(mi.height(1000) == "3,281 ft" || mi.height(1000) == "3 281 ft" || mi.height(1000) == "3281 ft", "height in feet: \(mi.height(1000))")
+    check(km.climb(up: 120, down: 80) == "↑ 120 m ↓ 80 m", "climb text")
+    check(mi.roundDistance(TrackRouter.maxDistance) == "12 mi" && km.roundDistance(TrackRouter.maxDistance) == "20 km", "round distances")
+    // Scale bar: 10 m per point, 110 pt max -> 1 km (100 pt) / ½ mi (80 pt); 3 m per point -> 1000 ft
+    let mBar = km.scaleBar(metersPerPoint: 10, maxPoints: 110), fBar = mi.scaleBar(metersPerPoint: 10, maxPoints: 110)
+    check(mBar?.label == "1 km" && abs((mBar?.points ?? 0) - 100) < 0.01, "metric scale bar: \(mBar?.label ?? "-")")
+    check(fBar?.label == "½ mi", "imperial scale bar: \(fBar?.label ?? "-")")
+    check(mi.scaleBar(metersPerPoint: 3, maxPoints: 110)?.label == "1000 ft", "imperial scale bar in feet")
+    check(mi.scaleBar(metersPerPoint: 30, maxPoints: 110)?.label == "2 mi", "imperial scale bar in miles")
+    check(Units(.automatic, locale: Locale(identifier: "en_US")).imperial && !Units(.automatic, locale: Locale(identifier: "en_AU")).imperial,
+          "automatic units follow the region")
+}
+
 // 3. Read back via the library (as the map does)
 let nswTile = library.tile(sourceID: "nsw-topo", key: k)
 check(nswTile != nil && TileImage.isImage(nswTile!), "NSW z16 tile readable offline (\(nswTile?.count ?? 0) bytes)")

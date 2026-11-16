@@ -7,6 +7,7 @@ struct RoutePlannerCard: View {
     let profile: Elevation.Profile?
     let onSave: () -> Void
     let onCancel: () -> Void
+    @Environment(\.units) private var units
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -17,8 +18,9 @@ struct RoutePlannerCard: View {
                 Text(summary).font(.subheadline.weight(.medium)).monospacedDigit()
             }
             Text(hint).font(.caption).foregroundStyle(.secondary)
-            if let notice = planner.notice {
-                Label(notice, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
+            if planner.legTooLong {
+                Label("Points over \(units.roundDistance(TrackRouter.maxDistance)) apart are joined in a straight line. Add points in between to follow tracks.",
+                      systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
             }
             if let i = selected, planner.isEnd(i), planner.waypoints.count > 1 {
                 Picker("Tap the map to", selection: $planner.extendsFromSelected) {
@@ -88,8 +90,8 @@ struct RoutePlannerCard: View {
 
     private var summary: String {
         guard planner.waypoints.count >= 2 else { return "" }
-        var s = RouteFormat.distance(planner.lengthMeters)
-        if let p = profile { s += " · ↑ \(Int(p.ascent)) m ↓ \(Int(p.descent)) m" }
+        var s = units.distance(planner.lengthMeters)
+        if let p = profile { s += " · \(units.climb(up: p.ascent, down: p.descent))" }
         return s
     }
 }
@@ -98,6 +100,7 @@ struct RoutePlannerCard: View {
 struct RecordingCard: View {
     let recorder: WalkRecorder
     let onStop: () -> Void
+    @Environment(\.units) private var units
 
     var body: some View {
         HStack(spacing: 12) {
@@ -110,8 +113,8 @@ struct RecordingCard: View {
                     if let start = recorder.startDate {
                         Text(start, style: .timer).monospacedDigit()
                     }
-                    Text(RouteFormat.distance(recorder.distance)).monospacedDigit()
-                    Text("↑ \(Int(recorder.climb.up)) m").monospacedDigit()
+                    Text(units.distance(recorder.distance)).monospacedDigit()
+                    Text("↑ \(units.height(recorder.climb.up))").monospacedDigit()
                 }
                 .font(.subheadline.weight(.semibold))
                 Text(status).font(.caption).foregroundStyle(.secondary)
@@ -132,8 +135,8 @@ struct RecordingCard: View {
     private var status: String {
         guard let fix = recorder.lastFix else { return "Waiting for GPS…" }
         var parts: [String] = []
-        if let alt = fix.altitude { parts.append("\(Int(alt)) m elevation") }
-        if fix.horizontalAccuracy > 0 { parts.append("GPS ±\(Int(fix.horizontalAccuracy)) m") }
+        if let alt = fix.altitude { parts.append("\(units.height(alt)) elevation") }
+        if fix.horizontalAccuracy > 0 { parts.append("GPS ±\(units.height(fix.horizontalAccuracy))") }
         return parts.isEmpty ? "Recording" : parts.joined(separator: " · ")
     }
 }
@@ -182,6 +185,7 @@ struct FollowChip: View {
     let route: SavedRoute
     let progress: RouteProgress?
     let onStop: () -> Void
+    @Environment(\.units) private var units
 
     var body: some View {
         HStack(spacing: 0) {
@@ -207,7 +211,7 @@ struct FollowChip: View {
 
     private var text: String {
         guard let p = progress else { return "Following \(route.name): waiting for your location…" }
-        if p.isOffRoute { return "Off route by \(RouteFormat.distance(p.offBy))" }
-        return "\(RouteFormat.distance(p.done)) done · \(RouteFormat.distance(p.remaining)) to go"
+        if p.isOffRoute { return "Off route by \(units.distance(p.offBy))" }
+        return "\(units.distance(p.done)) done · \(units.distance(p.remaining)) to go"
     }
 }

@@ -26,6 +26,7 @@ struct RoutesView: View {
     @Environment(RouteStore.self) private var routes
     @Environment(\.dismiss) private var dismiss
     @AppStorage("recordingEnabled") private var recordingEnabled = false
+    @Environment(\.units) private var units
     @AppStorage("recordingDetail") private var recordingDetail = WalkRecorder.Detail.standard.rawValue
 
     let onSelect: (SavedRoute) -> Void
@@ -120,7 +121,7 @@ struct RoutesView: View {
                         .frame(width: 26)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(route.name).foregroundStyle(.primary).lineLimit(2)
-                        Text(RouteFormat.summary(route)).font(.caption).foregroundStyle(.secondary)
+                        Text(RouteFormat.summary(route, units: units)).font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
                 }
@@ -155,19 +156,15 @@ struct RoutesView: View {
     }
 }
 
-/// Short descriptions of distances and times.
+/// Short descriptions of routes and times.
 enum RouteFormat {
-    static func distance(_ meters: Double) -> String {
-        meters < 1000 ? "\(Int((meters / 10).rounded()) * 10) m" : String(format: "%.1f km", meters / 1000)
-    }
-
     static func duration(_ t: TimeInterval) -> String {
         let minutes = Int(t / 60)
         return minutes < 60 ? "\(minutes) min" : "\(minutes / 60) h \(minutes % 60) min"
     }
 
-    static func summary(_ route: SavedRoute) -> String {
-        var parts = [route.kindName, distance(route.lengthMeters)]
+    static func summary(_ route: SavedRoute, units: Units) -> String {
+        var parts = [route.kindName, units.distance(route.lengthMeters)]
         if let d = route.duration { parts.append(duration(d)) }
         parts.append(route.created.formatted(date: .abbreviated, time: .omitted))
         return parts.joined(separator: " · ")

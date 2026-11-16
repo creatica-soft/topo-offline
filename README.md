@@ -41,6 +41,8 @@ and New Zealand).
 - **Walk recording** (off by default, to save battery): records your walk with GPS, also while
   the phone is locked, at a chosen detail (about every 5, 15 or 50 m). It shows the time,
   distance and climb as you go. Recorded walks stay on the phone.
+- **Units**: kilometres and metres or miles and feet, following the phone's region or chosen in
+  the map menu.
 - Location, compass and an always-visible scale bar, all working without signal.
 
 ## Building

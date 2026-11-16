@@ -698,5 +698,9 @@ struct TopoMapView: UIViewRepresentable {
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
             MainActor.assumeIsolated { controller.mapDidMove(mapView) }
         }
+
+        func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
+            MainActor.assumeIsolated { controller.mapIsMoving(mapView) }
+        }
     }
 }
