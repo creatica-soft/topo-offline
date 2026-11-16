@@ -32,9 +32,10 @@ struct TileSource: Identifiable, Hashable, Sendable {
         if storeAsJPEG { return "jpg" }
         return urlTemplate.contains(".webp") ? "webp" : "png"
     }
-    /// Optional rough outline (e.g. a state border) used to decide which map to show for a spot.
-    /// Coverage rectangles of neighbouring states overlap a lot; the outline settles which one applies.
-    var outline: [LonLat] = []
+    /// Optional rough outlines (e.g. a state border) used to decide which map to show for a spot.
+    /// Coverage rectangles of neighbouring states overlap a lot; the outlines settle which one applies.
+    /// A country can have several (the US: lower 48, Alaska, Hawaii, Puerto Rico).
+    var outlines: [[LonLat]] = []
     /// Australian state maps sit on top of the national map (shown when zoomed out); a map with
     /// its own small-scale levels, like NZ's Topo250, doesn't need it.
     var usesNationalOverview = true
@@ -49,7 +50,7 @@ struct TileSource: Identifiable, Hashable, Sendable {
     /// Whether this map has data at `point`.
     func covers(_ point: CLLocationCoordinate2D) -> Bool {
         guard coverage.contains(point) else { return false }
-        return outline.isEmpty || LonLat.polygon(outline, contains: point)
+        return outlines.isEmpty || outlines.contains { LonLat.polygon($0, contains: point) }
     }
 
     func tileURL(_ key: TileKey) -> URL {
@@ -77,7 +78,7 @@ enum TileSources {
         licenceName: "CC BY 4.0",
         licenceURL: URL(string: "https://www.nsw.gov.au/nsw-government/copyright")!,
         averageTileBytes: 30_000, storeAsJPEG: false,
-        outline: StateOutlines.nsw)
+        outlines: [StateOutlines.nsw])
 
     static let qld = TileSource(
         id: "qld-topo",
@@ -90,7 +91,7 @@ enum TileSources {
         licenceName: "CC BY 4.0",
         licenceURL: URL(string: "https://creativecommons.org/licenses/by/4.0/")!,
         averageTileBytes: 45_000, storeAsJPEG: true,
-        outline: StateOutlines.qld)
+        outlines: [StateOutlines.qld])
 
     static let tas = TileSource(
         id: "tas-topo",
@@ -135,18 +136,37 @@ enum TileSources {
         usesNationalOverview: false,
         maxTilesPerMinute: Secrets.linzKeyIsDeveloperKey ? nil : 900)
 
+    /// United States: USGS Topo from The National Map (US Topo / National Map data, public domain).
+    /// Cached to zoom 16 (17 doesn't exist); the server allows tile export, so saving areas is expected.
+    static let us = TileSource(
+        id: "us-topo",
+        name: "USGS Topo",
+        coverageName: "United States",
+        urlTemplate: "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}",
+        minZoom: 4, maxZoom: 16, suggestedDownloadZooms: 9...16,
+        coverage: usCoverage,
+        attribution: "USGS The National Map",
+        licenceName: "Public domain (U.S. Government)",
+        licenceURL: URL(string: "https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits")!,
+        averageTileBytes: 25_000, storeAsJPEG: false,
+        outlines: USOutlines.all,
+        usesNationalOverview: false)
+
+    /// All US states and territories the USGS map covers (the outlines narrow it down).
+    static let usCoverage = BoundingBox(minLat: 17.5, minLon: -180, maxLat: 72, maxLon: -64.5)
+
     /// Elevation (not shown as a map): Terrain Tiles, terrarium-encoded PNGs. Zoom 13 is about
-    /// 15 m per pixel here, finer than the 30 m SRTM data behind it in Australia. Must stay
+    /// 15 m per pixel here, finer than the 30 m SRTM data behind it in Australia (US data is 10 m 3DEP). Must stay
     /// lossless (no JPEG), since the colours *are* the elevations.
     static let terrain = TileSource(
         id: "terrain",
         name: "Elevation",
-        coverageName: "Australia and New Zealand",
+        coverageName: "Worldwide",
         urlTemplate: "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
         minZoom: 13, maxZoom: 13, suggestedDownloadZooms: 13...13,
-        coverage: BoundingBox(minLat: -48.0, minLon: 112.0, maxLat: -9.0, maxLon: 179.0),
+        coverage: BoundingBox(minLat: -60.0, minLon: -180.0, maxLat: 72.0, maxLon: 180.0),
         attribution: Elevation.attribution,
-        licenceName: "CC BY (Geoscience Australia, LINZ); public domain (USGS)",
+        licenceName: "CC BY (Geoscience Australia, LINZ); public domain (USGS 3DEP, SRTM)",
         licenceURL: URL(string: "https://github.com/tilezen/joerd/blob/master/docs/attribution.md")!,
         averageTileBytes: 35_000, storeAsJPEG: false,
         usesNationalOverview: false)
@@ -155,24 +175,36 @@ enum TileSources {
     static let overview = australia
 
     /// Everything selectable; maps needing a key that isn't set are left out.
-    static let all: [TileSource] = [nsw, qld, tas, nz, australia].filter(\.isAvailable)
-    static let allIncludingUnavailable: [TileSource] = [nsw, qld, tas, nz, australia]
+    static let all: [TileSource] = [nsw, qld, tas, nz, us, australia].filter(\.isAvailable)
+    static let allIncludingUnavailable: [TileSource] = [nsw, qld, tas, nz, us, australia]
 
     static func source(id: String) -> TileSource? { (all + [terrain]).first { $0.id == id } }
+
+    /// The map chosen on first launch: the phone's own country when the app has a map for it.
+    static func defaultSource(for locale: Locale = .current) -> TileSource {
+        switch locale.region?.identifier {
+        case "US", "PR", "VI": return us
+        case "NZ" where nz.isAvailable: return nz
+        default: return nsw
+        }
+    }
 
     /// With "national map when zoomed out" on, state maps take over from this zoom
     /// (about a 10 km wide view on a phone), where their contours become useful.
     static let detailFromZoom = 13
 
     /// The detailed state maps, in the order they're tried.
-    static let stateMaps: [TileSource] = [nsw, qld, tas, nz].filter(\.isAvailable)
+    static let stateMaps: [TileSource] = [nsw, qld, tas, nz, us].filter(\.isAvailable)
 
     /// The best map for a spot: keep `current` if it covers the spot (coverage rectangles overlap
     /// along state borders, so this avoids flip-flopping there), otherwise the state map that
-    /// covers it, otherwise the national map.
+    /// covers it, otherwise (in Australia) the national map. Elsewhere `current` stays, and
+    /// Apple's map shows where it has nothing.
     static func best(for point: CLLocationCoordinate2D, preferring current: TileSource? = nil) -> TileSource {
         if let current, current.covers(point) { return current }
-        return stateMaps.first { $0.covers(point) } ?? australia
+        if let state = stateMaps.first(where: { $0.covers(point) }) { return state }
+        if australia.covers(point) { return australia }
+        return current ?? australia
     }
 
     /// Maps that have anything inside `area`, best match first.

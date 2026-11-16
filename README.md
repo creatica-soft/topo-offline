@@ -1,8 +1,8 @@
 # Topo Offline
 
-An iPhone app for bushwalkers and trampers: official topographic maps for Australia and New
-Zealand that you can save for use without phone signal, with walking tracks, campsites, huts,
-closures and elevation profiles.
+An iPhone app for bushwalkers, trampers and hikers: official topographic maps for Australia, New
+Zealand and the United States that you can save for use without phone signal, with walking tracks
+and trails, campsites, huts, closures and elevation profiles.
 
 **No account, no ads, no analytics, no tracking.** The app has no server of its own: map tiles
 and data come straight from government open-data services, and your location never leaves your
@@ -14,20 +14,24 @@ and New Zealand).
 ## Features
 
 - **Topo maps**: NSW, Queensland and Tasmania state topo maps, New Zealand's LINZ Topo50/Topo250,
-  and Geoscience Australia's 1:250k national map underneath (optionally shown when zoomed out,
-  with the state map taking over at walking scale).
+  the USGS topo map for the United States (including Alaska, Hawaii and Puerto Rico), and
+  Geoscience Australia's 1:250k national map underneath the Australian state maps (optionally
+  shown when zoomed out, with the state map taking over at walking scale).
 - **Offline areas**: download what's on screen at full detail (with the tile count and size shown
   first); maps, place names, tracks and elevation are saved together. Zooming in past the
   downloaded detail enlarges the finest tiles instead of going blank. Offline mode uses only what's
   on the phone.
-- **Search**: Australia's Composite Gazetteer (about 290,000 names) and the NZ Gazetteer (about
-  55,000 names, kept on the phone so it's instant and works offline), plus walking-track names.
-- **Walking tracks** (NSW, QLD, TAS, VIC, NZ): tap a track to highlight all of it and see its name,
-  type and length. In Victoria, which has no free topo map, all tracks are drawn on the map.
+- **Search**: Australia's Composite Gazetteer (about 290,000 names), the NZ Gazetteer (about
+  55,000 names, kept on the phone so it's instant and works offline) and the USGS Geographic Names
+  Information System, plus walking-track and trail names.
+- **Walking tracks and trails** (NSW, QLD, TAS, VIC, NZ, US): tap a track to highlight all of it and
+  see its name, type and length. In Victoria, which has no free topo map, all tracks are drawn on
+  the map.
 - **Elevation profiles**: climb, descent, highest and lowest points, and a chart you can drag
   along to see the spot on the map.
 - **Campsites, huts and closures**: official campgrounds (NSW National Parks, Vicmap, the national
-  gazetteer, Victorian state forests, NZ DOC huts and campsites) and community campsites and
+  gazetteer, Victorian state forests, NZ DOC huts and campsites, US Forest Service campgrounds with
+  their open or closed status) and community campsites and
   caravan parks from OpenStreetMap with facilities, merged into one pin per place. Current
   closures for Victorian state forests and NZ DOC (worked out from their dates; stale records are
   ignored) and NZ freedom-camping rules.
@@ -99,7 +103,11 @@ where its data is shown.
 | New Zealand topo map | Toitū Te Whenua LINZ (Basemaps) | CC BY 4.0, Basemaps terms of use |
 | NZ place names | LINZ, NZ Gazetteer | CC BY 4.0 |
 | NZ tracks, huts, campsites, closures, freedom camping | Department of Conservation | CC BY 4.0 |
-| Elevation | Terrain Tiles on AWS (Geoscience Australia, LINZ, USGS SRTM) | CC BY / public domain |
+| US topo map | USGS The National Map | Public domain |
+| US trails | USGS National Digital Trails | Public domain |
+| US place names | USGS Geographic Names Information System | Public domain |
+| US campgrounds | USDA Forest Service | Public domain |
+| Elevation | Terrain Tiles on AWS (Geoscience Australia, LINZ, USGS 3DEP and SRTM) | CC BY / public domain |
 | Community campsites | © OpenStreetMap contributors | ODbL 1.0 |
 
 If you build your own app from this code, check each provider's terms for your use. Some ask to

@@ -39,21 +39,22 @@ mostly government agencies:
   the Victorian Government (Vicmap and DEECA) and NSW National Parks and Wildlife Service
 - Toitū Te Whenua Land Information New Zealand (LINZ) and the New Zealand Department of
   Conservation
+- the U.S. Geological Survey (The National Map) and the USDA Forest Service
 - Terrain Tiles on Amazon Web Services (elevation data)
 
 Some of these services are hosted on Esri ArcGIS Online or Amazon Web Services. Like any website,
 a service receives the technical information needed to answer a request: your device's internet
 address and which map area or place name was requested. When you search for a place in
-Australia, the text you type is sent to Geoscience Australia's place-name service. New Zealand
-place names are searched on your phone. The app sends nothing else, and no identifier that links
-requests to you. How each service handles its own server logs is set out in its own privacy
+Australia, the text you type is sent to Geoscience Australia's place-name service, and in the
+United States to the U.S. Geological Survey's. New Zealand place names are searched on your
+phone. The app sends nothing else, and no identifier that links requests to you. How each service handles its own server logs is set out in its own privacy
 policy.
 
 You can switch the app to **Offline** mode, and it will make no requests at all and use only maps
 and data already on your phone.
 
-Where no topographic map is available for the area on screen (for example outside Australia),
-the app shows Apple's map instead, which loads map images from Apple. This doesn't happen in
+Where no topographic map is available for the area on screen (for example outside the countries
+the app covers), the app shows Apple's map instead, which loads map images from Apple. This doesn't happen in
 Offline mode. The app is built with Apple's iOS and MapKit frameworks, which are covered by
 [Apple's privacy policy](https://www.apple.com/legal/privacy/).
 

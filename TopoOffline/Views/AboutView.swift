@@ -15,7 +15,7 @@ struct AboutView: View {
 
             Section {
                 Text("Maps can be out of date or wrong. Always carry a paper map, compass and a way to call for help, and check park alerts before you go.")
-                Text("Closures are shown for Victorian state forests and reserves (only while their dates say they apply) and for New Zealand DOC tracks, huts and campsites. A track or campsite without a closure shown may still be closed: Australian national parks and other states aren't covered, and DOC alerts have more detail.")
+                Text("Closures are shown for Victorian state forests and reserves (only while their dates say they apply), for New Zealand DOC tracks, huts and campsites, and for US Forest Service campgrounds (as the Forest Service lists them, refreshed every two weeks). A track or campsite without a closure shown may still be closed: Australian national parks, other states and US national parks aren't covered, and DOC and Forest Service pages have more detail.")
             } header: {
                 Text("Safety")
             }
@@ -50,6 +50,13 @@ struct AboutView: View {
                 }
                 .padding(.vertical, 2)
                 VStack(alignment: .leading, spacing: 4) {
+                    Text("United States").font(.headline)
+                    if let trails = TrackSources.attribution(for: "US") { Text(trails).font(.footnote) }
+                    Text(USPlaceNames.attribution).font(.footnote)
+                    Text("Campgrounds: \(CampSource.usfsCredit)").font(.footnote)
+                }
+                .padding(.vertical, 2)
+                VStack(alignment: .leading, spacing: 4) {
                     Text("Campgrounds").font(.headline)
                     Text("NSW campgrounds: © State Government of NSW and NSW Department of Climate Change, Energy, the Environment and Water 2026, CC BY. Vicmap Features of Interest © State of Victoria, CC BY 4.0; Composite Gazetteer of Australia © Geoscience Australia, CC BY 4.0.").font(.footnote)
                     Text("Community campsites and facilities: \(CampSource.osmCredit). Shown in teal; may be out of date.").font(.footnote)
@@ -66,6 +73,7 @@ struct AboutView: View {
                     Text("Search").font(.headline)
                     Text(Gazetteer.attribution).font(.footnote)
                     Link("CC BY 4.0", destination: URL(string: "https://creativecommons.org/licenses/by/4.0/")!).font(.footnote)
+                    Text(USPlaceNames.attribution).font(.footnote)
                 }
                 .padding(.vertical, 2)
             } header: {

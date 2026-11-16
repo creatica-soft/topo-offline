@@ -68,7 +68,7 @@ struct TopoMapView: UIViewRepresentable {
         map.isRotateEnabled = true
         map.pointOfInterestFilter = .excludingAll
         map.cameraZoomRange = MKMapView.CameraZoomRange(minCenterCoordinateDistance: 200)
-        map.setRegion(MapController.australia, animated: false)
+        map.setRegion(MapController.startRegion(), animated: false)
         // When Apple's map is shown (no topo map for the area), keep it quiet so tracks and pins stand out.
         map.preferredConfiguration = MKStandardMapConfiguration(elevationStyle: .flat, emphasisStyle: .muted)
         DispatchQueue.main.async { controller.attach(map) }  // not during a SwiftUI view update

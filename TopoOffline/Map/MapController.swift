@@ -21,6 +21,21 @@ final class MapController {
     static let australia = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: -28, longitude: 134),
         span: MKCoordinateSpan(latitudeDelta: 34, longitudeDelta: 40))
+    static let newZealand = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: -41, longitude: 173),
+        span: MKCoordinateSpan(latitudeDelta: 14, longitudeDelta: 14))
+    static let lower48 = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: 39, longitude: -98),
+        span: MKCoordinateSpan(latitudeDelta: 28, longitudeDelta: 60))
+
+    /// Where the map opens: the phone's own country when the app has maps for it.
+    static func startRegion(for locale: Locale = .current) -> MKCoordinateRegion {
+        switch locale.region?.identifier {
+        case "US", "PR", "VI": return lower48
+        case "NZ": return newZealand
+        default: return australia
+        }
+    }
 
     func attach(_ map: MKMapView) {
         mapView = map
