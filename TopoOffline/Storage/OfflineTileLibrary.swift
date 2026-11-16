@@ -128,6 +128,12 @@ final class OfflineTileLibrary: @unchecked Sendable {
         }
     }
 
+    /// Downloaded segments of every state inside `box` (for route planning).
+    func trackSegments(in box: BoundingBox) -> [TrackSegment] {
+        var seen = Set<[Double]>()
+        return allTrackSegments.filter { $0.bbox.intersects(box) && seen.insert($0.coords).inserted }
+    }
+
     /// Every downloaded segment of a named track (de-duplicated across overlapping areas).
     func trackSegments(named name: String, state: String) -> [TrackSegment] {
         let wanted = Gazetteer.normalize(name)

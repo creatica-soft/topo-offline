@@ -317,6 +317,133 @@ check(withProfile == savedTracks.count, "offline profiles for tracks leaving the
 check(await Elevation.profile(for: Track(segments: [TrackSegment(layer: "x", name: "x", kind: "x", state: "NSW", coords: [140.5, -30.0, 140.51, -30.0])])!,
                               library: noDownloads, offlineOnly: true) == nil, "no profile offline without downloaded elevation")
 
+// 2h. Routes: track routing, GPX, progress along a route, GPS fix filtering, saving
+do {
+    // Two lines meeting in a T with an 8 m gap (as in published data): routing joins them
+    let base = CLLocationCoordinate2D(latitude: -33.7, longitude: 150.3)
+    func off(_ e: Double, _ n: Double) -> CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: base.latitude + n / 110_540, longitude: base.longitude + e / (111_320 * cos(base.latitude * .pi / 180)))
+    }
+    let main = [off(0, 0), off(500, 0), off(1000, 0)]
+    let branch = [off(700, 8), off(700, 600)]
+    let r = TrackRouter.route(from: off(10, 5), to: off(705, 590), along: [main, branch], snap: 30)
+    let rLen = r.map(TrackPath.length) ?? 0
+    check(r != nil && abs(rLen - (690 + 8 + 592)) < 20, "router follows a T junction with a gap (\(Int(rLen)) m)")
+    check(TrackRouter.route(from: off(10, 5), to: off(705, 900), along: [main, branch], snap: 30) == nil, "router: point off the network -> no route")
+
+    // Online: two points on Federal Pass Walking Track
+    if let fp = try await TrackSources.search("federal pass", near: katoombaC).first {
+        let line = TrackPath.chain(fp.segments.map(\.points)).path
+        let s = TrackPath.sample(line, maxSamples: 100, minStep: 10)
+        let i = s.points.count / 5, j = s.points.count * 3 / 5
+        let along = s.distances[j] - s.distances[i]
+        let leg = await TrackRouter.leg(from: s.points[i], to: s.points[j], followTracks: true, snap: 40, library: noDownloads, offlineOnly: false)
+        let len = TrackPath.length(leg.points), direct = TrackPath.meters(s.points[i], s.points[j])
+        check(leg.followsTracks && len > direct * 1.02 && len < along * 1.15,
+              "route along Federal Pass: \(Int(len)) m (along track \(Int(along)) m, straight \(Int(direct)) m)")
+    } else { check(false, "Federal Pass for routing") }
+    let outback = await TrackRouter.leg(from: .init(latitude: -32.0, longitude: 142.0), to: .init(latitude: -32.01, longitude: 142.01),
+                                        followTracks: true, snap: 40, library: noDownloads, offlineOnly: false)
+    check(!outback.followsTracks && outback.points.count == 2, "no tracks nearby -> straight leg")
+    // Offline, from the downloaded Katoomba area only
+    if let t = TrackSources.group(saved).filter({ $0.lengthKm > 0.8 }).max(by: { $0.lengthKm < $1.lengthKm }) {
+        let line = TrackPath.chain(t.segments.map(\.points)).path
+        let s = TrackPath.sample(line, maxSamples: 50, minStep: 10)
+        let leg = await TrackRouter.leg(from: s.points[2], to: s.points[s.points.count - 3], followTracks: true, snap: 40,
+                                        library: library, offlineOnly: true)
+        check(leg.followsTracks, "offline route along \(t.displayName) from downloaded tracks (\(Int(TrackPath.length(leg.points))) m)")
+    }
+
+    // Planner: three taps, undo, delete a point
+    let planner = RoutePlanner(library: noDownloads, offlineOnly: true)
+    planner.followTracks = false
+    planner.add(off(0, 0), tolerance: 30); planner.add(off(1000, 0), tolerance: 30); planner.add(off(1000, 1000), tolerance: 30)
+    await planner.settle()
+    check(planner.waypoints.count == 3 && abs(planner.lengthMeters - 2000) < 5, "planner: 3 points, \(Int(planner.lengthMeters)) m")
+    planner.remove(1); await planner.settle()
+    check(planner.legs.count == 1 && abs(planner.lengthMeters - 1414) < 5, "planner: middle point removed")
+    planner.undo(); await planner.settle()
+    check(planner.legs.count == 2, "planner: undo")
+    // Select a point, then tap the map: it moves there and the selection clears.
+    planner.select(1)
+    planner.tap(off(1000, -500), tolerance: 30); await planner.settle()
+    check(planner.waypoints.count == 3 && planner.selected == nil && abs(planner.lengthMeters - 2618) < 5,
+          "planner: tap moves the selected point (\(Int(planner.lengthMeters)) m)")
+    // Start selected, "Add before start": each tap adds a new start, which stays selected.
+    planner.select(0); planner.extendsFromSelected = true
+    planner.tap(off(-1000, 0), tolerance: 30); planner.tap(off(-1000, -1000), tolerance: 30); await planner.settle()
+    check(planner.waypoints.count == 5 && planner.selected == 0 && planner.legs.count == 4
+          && TrackPath.meters(planner.waypoints[0], off(-1000, -1000)) < 1 && abs(planner.lengthMeters - 4618) < 5,
+          "planner: extend from the start (\(Int(planner.lengthMeters)) m)")
+    // End selected, "Add after end": the new point becomes the selected end.
+    planner.select(4); planner.extendsFromSelected = true
+    planner.tap(off(2000, 1000), tolerance: 30); await planner.settle()
+    check(planner.waypoints.count == 6 && planner.selected == 5 && abs(planner.lengthMeters - 5618) < 5,
+          "planner: extend from the end")
+    planner.select(5)
+    check(planner.selected == nil, "planner: tapping the selected point deselects it")
+    // Tapping the line inserts a point there (shape unchanged) and selects it; the next tap moves it.
+    let inserting = RoutePlanner(library: noDownloads, offlineOnly: true)
+    inserting.followTracks = false
+    inserting.add(off(0, 0), tolerance: 30); inserting.add(off(1000, 0), tolerance: 30); inserting.add(off(1000, 1000), tolerance: 30)
+    inserting.tap(off(500, 12), tolerance: 30); await inserting.settle()
+    check(inserting.waypoints.count == 4 && inserting.legs.count == 3 && inserting.selected == 1
+          && TrackPath.meters(inserting.waypoints[1], off(500, 0)) < 1 && abs(inserting.lengthMeters - 2000) < 5,
+          "planner: tap on the line inserts a point")
+    inserting.tap(off(500, 300), tolerance: 30); await inserting.settle()
+    check(inserting.waypoints.count == 4 && inserting.selected == nil && abs(inserting.lengthMeters - 2166) < 5,
+          "planner: the inserted point moves (\(Int(inserting.lengthMeters)) m)")
+    inserting.tap(off(1000, 1020), tolerance: 30); await inserting.settle()
+    check(inserting.waypoints.count == 5 && inserting.selected == nil, "planner: a tap just past the end adds a point")
+
+    // GPX: write and read back a recorded walk; read a file with a route and a 2-piece track
+    var walk = SavedRoute(name: "Walk & <test>", kind: .recorded)
+    let pts = [off(0, 0), off(30, 10), off(60, 25)]
+    walk.legs = [SavedRoute.Leg(coords: SavedRoute.coords(pts), followsTracks: false)]
+    walk.times = [1_763_000_000, 1_763_000_020, 1_763_000_045]
+    walk.altitudes = [900, nil, 912.5]
+    let back = GPX.routes(from: GPX.data(for: walk), fallbackName: "x")
+    check(back.count == 1 && back[0].name == walk.name && back[0].times == walk.times && back[0].altitudes == walk.altitudes
+          && zip(back[0].path, pts).allSatisfy { TrackPath.meters($0, $1) < 0.2 }, "GPX round trip (name, points, times, elevations)")
+    let other = """
+    <?xml version="1.0"?><gpx xmlns="http://www.topografix.com/GPX/1/1"><metadata><name>Trip</name></metadata>
+    <wpt lat="-33.7" lon="150.3"><name>Camp</name></wpt>
+    <rte><name>Day 1</name><rtept lat="-33.70" lon="150.30"/><rtept lat="-33.71" lon="150.31"/><rtept lat="-33.72" lon="150.30"/></rte>
+    <trk><trkseg><trkpt lat="-33.7" lon="150.3"/><trkpt lat="-33.7" lon="150.31"/></trkseg><trkseg><trkpt lat="-33.71" lon="150.31"/><trkpt lat="-33.71" lon="150.32"/></trkseg></trk></gpx>
+    """
+    let parsed = GPX.routes(from: Data(other.utf8), fallbackName: "file")
+    check(parsed.map(\.name) == ["Day 1", "Trip 2"] && parsed[0].path.count == 3 && parsed[1].legs.count == 2 && parsed[1].path.count == 4,
+          "GPX import: route and two-piece track (\(parsed.map(\.name)))")
+
+    // Progress along a route: halfway along, and off route
+    let route = [off(0, 0), off(1000, 0), off(1000, 1000)]
+    let half = RouteProgress.locate(off(1000, 0), on: route)
+    check(half.map { abs($0.done - 1000) < 2 && abs($0.remaining - 1000) < 2 && !$0.isOffRoute } == true, "progress: halfway")
+    check(RouteProgress.locate(off(500, 150), on: route)?.isOffRoute == true, "progress: 150 m away is off route")
+    let outBack = [off(0, 0), off(1000, 0), off(0, 0)]
+    check(RouteProgress.locate(off(200, 0), on: outBack, previous: 1700).map { abs($0.done - 1800) < 2 } == true,
+          "progress: out-and-back keeps to the return leg")
+
+    // GPS fixes: a bad-accuracy fix and a 1 km jump are dropped
+    let f0 = GPSFix(coordinate: off(0, 0), time: 0, horizontalAccuracy: 8, altitude: 900)
+    check(RecordingFilter.accept(GPSFix(coordinate: off(15, 0), time: 10, horizontalAccuracy: 10), after: f0, maxAccuracy: 50),
+          "GPS: normal walking fix kept")
+    check(!RecordingFilter.accept(GPSFix(coordinate: off(15, 0), time: 10, horizontalAccuracy: 200), after: f0, maxAccuracy: 50),
+          "GPS: ±200 m fix dropped")
+    check(!RecordingFilter.accept(GPSFix(coordinate: off(1000, 0), time: 10, horizontalAccuracy: 10), after: f0, maxAccuracy: 50),
+          "GPS: 1 km jump in 10 s dropped")
+
+    // Saving
+    let routesDir = dataDir.appendingPathComponent("Routes")
+    let rs = RouteStore(directory: routesDir, shownKey: "selftest-shown")
+    rs.save(walk); rs.setShown(walk.id, true)
+    let imported = rs.importGPX(Data(other.utf8), fileName: "Trip.gpx")
+    let rs2 = RouteStore(directory: routesDir, shownKey: "selftest-shown")
+    check(rs2.routes.count == 3 && rs2.route(id: walk.id) == walk && rs2.shownIDs.count == 3, "routes saved and reloaded (\(rs2.routes.count))")
+    rs2.delete(walk); imported.forEach(rs2.delete)
+    check(RouteStore(directory: routesDir, shownKey: "selftest-shown").routes.isEmpty, "routes deleted")
+}
+
 // 3. Read back via the library (as the map does)
 let nswTile = library.tile(sourceID: "nsw-topo", key: k)
 check(nswTile != nil && TileImage.isImage(nswTile!), "NSW z16 tile readable offline (\(nswTile?.count ?? 0) bytes)")

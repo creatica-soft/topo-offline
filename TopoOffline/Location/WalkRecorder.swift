@@ -1,0 +1,226 @@
+import Foundation
+import CoreLocation
+import Observation
+
+/// Records a walk with GPS, including while the phone is locked (iOS shows its blue location
+/// indicator). Off unless the user turns on "Record walks". Points never leave the phone.
+@MainActor
+@Observable
+final class WalkRecorder: NSObject {
+    /// How often a point is recorded: closer points use more battery.
+    enum Detail: String, CaseIterable, Identifiable {
+        case detailed, standard, saver
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .detailed: return "Detailed"
+            case .standard: return "Standard"
+            case .saver: return "Battery saver"
+            }
+        }
+
+        var explanation: String {
+            switch self {
+            case .detailed: return "A point about every 5 m. Uses the most battery."
+            case .standard: return "A point about every 15 m."
+            case .saver: return "A point about every 50 m, less precise. Uses the least battery."
+            }
+        }
+
+        var distanceFilter: CLLocationDistance {
+            switch self {
+            case .detailed: return 5
+            case .standard: return 15
+            case .saver: return 50
+            }
+        }
+
+        var accuracy: CLLocationAccuracy {
+            switch self {
+            case .detailed: return kCLLocationAccuracyBest
+            case .standard: return kCLLocationAccuracyNearestTenMeters
+            case .saver: return kCLLocationAccuracyHundredMeters
+            }
+        }
+
+        /// Fixes vaguer than this are dropped.
+        var maxAccuracy: Double {
+            switch self {
+            case .detailed: return 30
+            case .standard: return 50
+            case .saver: return 100
+            }
+        }
+    }
+
+    /// The walk being recorded (saved as `inProgress` as it goes).
+    private(set) var current: SavedRoute?
+    private(set) var lastFix: GPSFix?
+    private(set) var distance: Double = 0
+    private(set) var climb: (up: Double, down: Double) = (0, 0)
+    /// The recorded line so far (for the map); `version` changes with it.
+    private(set) var points: [CLLocationCoordinate2D] = []
+    private(set) var version = 0
+    /// Set when location access is off, so the app can explain how to turn it on.
+    var permissionProblem = false
+
+    var isRecording: Bool { current != nil }
+    var startDate: Date? { current?.times.first.map { Date(timeIntervalSince1970: $0) } ?? current?.created }
+
+    /// Called with each recorded position (to update progress along a followed route).
+    @ObservationIgnored var onFix: ((CLLocationCoordinate2D) -> Void)?
+
+    @ObservationIgnored private let manager = CLLocationManager()
+    @ObservationIgnored private let store: RouteStore
+    @ObservationIgnored private var detail = Detail.standard
+    @ObservationIgnored private var session: CLBackgroundActivitySession?
+    @ObservationIgnored private var lastSave = Date.distantPast
+    @ObservationIgnored private var startWhenAllowed = false
+
+    init(store: RouteStore) {
+        self.store = store
+        super.init()
+        manager.delegate = self
+        manager.activityType = .fitness
+        manager.pausesLocationUpdatesAutomatically = false
+    }
+
+    func start(detail: Detail) {
+        guard current == nil else { return }
+        var walk = SavedRoute(name: SavedRoute.recordingName(), kind: .recorded)
+        walk.inProgress = true
+        walk.legs = [SavedRoute.Leg(coords: [], followsTracks: false)]
+        begin(walk, detail: detail)
+    }
+
+    /// Carries on with a walk left in progress (the app was closed while recording).
+    func resume(_ walk: SavedRoute, detail: Detail) {
+        guard current == nil else { return }
+        var w = walk
+        if w.legs.isEmpty { w.legs = [SavedRoute.Leg(coords: [], followsTracks: false)] }
+        begin(w, detail: detail)
+    }
+
+    /// Stops and saves the walk. Returns it (nil if nothing was recorded, in which case it's discarded).
+    @discardableResult
+    func stop() -> SavedRoute? {
+        guard var walk = current else { return nil }
+        manager.stopUpdatingLocation()
+        manager.allowsBackgroundLocationUpdates = false
+        session?.invalidate()
+        session = nil
+        startWhenAllowed = false
+        current = nil
+        walk.inProgress = false
+        walk.modified = Date()
+        defer { reset() }
+        guard (walk.legs.first?.coords.count ?? 0) >= 4 else {
+            store.delete(walk)
+            return nil
+        }
+        store.save(walk)
+        store.setShown(walk.id, true)
+        return walk
+    }
+
+    /// Writes the walk so far (called periodically and when the app goes to the background).
+    func saveNow() {
+        guard let walk = current else { return }
+        store.save(walk)
+        lastSave = Date()
+    }
+
+    private func begin(_ walk: SavedRoute, detail: Detail) {
+        self.detail = detail
+        current = walk
+        let leg = walk.legs.first
+        points = leg?.points ?? []
+        distance = TrackPath.length(points)
+        climb = RecordingFilter.climb(walk.altitudes)
+        if let p = points.last, let t = walk.times.last {
+            lastFix = GPSFix(coordinate: p, time: t, horizontalAccuracy: 0, altitude: walk.altitudes.last ?? nil)
+        }
+        version += 1
+        saveNow()
+        manager.distanceFilter = detail.distanceFilter
+        manager.desiredAccuracy = detail.accuracy
+        switch manager.authorizationStatus {
+        case .notDetermined:
+            startWhenAllowed = true
+            manager.requestWhenInUseAuthorization()
+        case .denied, .restricted:
+            permissionProblem = true
+            current = nil
+            store.delete(walk)
+            reset()
+        default:
+            startUpdates()
+        }
+    }
+
+    private func startUpdates() {
+        // Keeps location updates coming while locked, with "When In Use" permission only.
+        session = CLBackgroundActivitySession()
+        manager.allowsBackgroundLocationUpdates = true
+        manager.showsBackgroundLocationIndicator = true
+        manager.startUpdatingLocation()
+    }
+
+    private func reset() {
+        points = []
+        distance = 0
+        climb = (0, 0)
+        lastFix = nil
+        version += 1
+    }
+
+    private func record(_ location: CLLocation) {
+        guard var walk = current else { return }
+        let fix = GPSFix(coordinate: location.coordinate, time: location.timestamp.timeIntervalSince1970,
+                         horizontalAccuracy: location.horizontalAccuracy,
+                         altitude: location.verticalAccuracy >= 0 ? location.altitude : nil)
+        guard RecordingFilter.accept(fix, after: lastFix, maxAccuracy: detail.maxAccuracy) else { return }
+        if let last = lastFix { distance += TrackPath.meters(last.coordinate, fix.coordinate) }
+        lastFix = fix
+        walk.legs[0].coords += [fix.coordinate.longitude, fix.coordinate.latitude]
+        walk.times.append(fix.time)
+        walk.altitudes.append(fix.altitude)
+        current = walk
+        points.append(fix.coordinate)
+        climb = RecordingFilter.climb(walk.altitudes)
+        version += 1
+        onFix?(fix.coordinate)
+        if Date().timeIntervalSince(lastSave) > 60 { saveNow() }
+    }
+}
+
+extension WalkRecorder: CLLocationManagerDelegate {
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        MainActor.assumeIsolated {
+            for l in locations { record(l) }
+        }
+    }
+
+    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        MainActor.assumeIsolated {
+            guard startWhenAllowed else { return }
+            switch manager.authorizationStatus {
+            case .authorizedWhenInUse, .authorizedAlways:
+                startWhenAllowed = false
+                startUpdates()
+            case .denied, .restricted:
+                startWhenAllowed = false
+                permissionProblem = true
+                if let walk = current { store.delete(walk) }
+                current = nil
+                reset()
+            default: break
+            }
+        }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        // Temporary failures (no fix yet, under heavy cover) are normal: keep going.
+    }
+}

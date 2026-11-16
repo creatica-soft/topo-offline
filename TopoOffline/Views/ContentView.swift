@@ -4,6 +4,20 @@ import MapKit
 struct ContentView: View {
     @Environment(RegionStore.self) private var store
     @Environment(DownloadManager.self) private var downloads
+    @Environment(RouteStore.self) private var routes
+    @Environment(WalkRecorder.self) private var recorder
+    @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("recordingEnabled") private var recordingEnabled = false
+    @AppStorage("recordingDetail") private var recordingDetail = WalkRecorder.Detail.standard.rawValue
+    @State private var showRoutes = false
+    @State private var planner: RoutePlanner?
+    @State private var plannerProfile: Elevation.Profile?
+    @State private var namingRoute = false
+    @State private var following: SavedRoute?
+    @State private var followPath: [CLLocationCoordinate2D] = []
+    @State private var progress: RouteProgress?
+    @State private var leftoverWalk: SavedRoute?
+    @State private var importMessage: String?
 
     @State private var controller = MapController()
     @AppStorage("sourceID") private var sourceID = TileSources.nsw.id
@@ -27,8 +41,17 @@ struct ContentView: View {
 
     /// Changes whenever a different track is selected (or offline mode flips), to recompute the profile.
     private var profileTaskID: String {
-        guard case .track(let t) = card else { return "" }
+        guard let t = cardTrack else { return "" }
         return "\(t.id)|\(t.segments.count)|\(offlineOnly)"
+    }
+
+    /// The track or saved route whose card is open (both get an elevation profile).
+    private var cardTrack: Track? {
+        switch card {
+        case .track(let t): return t
+        case .route(let r): return r.asTrack
+        default: return nil
+        }
     }
 
     /// What the card at the bottom shows (one thing at a time).
@@ -37,6 +60,7 @@ struct ContentView: View {
         case site(Campsite)
         case closure(ClosedLine)
         case rule(CampingRule)
+        case route(SavedRoute)
     }
 
     /// Track drawn highlighted on the map: the selected track, or the selected closed track/road.
@@ -44,6 +68,7 @@ struct ContentView: View {
         switch card {
         case .track(let t): return t
         case .closure(let c): return Track(segments: c.segments)
+        case .route(let r): return r.asTrack
         default: return nil
         }
     }
@@ -82,13 +107,22 @@ struct ContentView: View {
                     selectedSiteID: selectedSiteID,
                     onSelectSite: { site in card = .site(site) },
                     controller: controller,
-                    onTap: { coordinate, meters in lookUpTrack(at: coordinate, within: meters) })
+                    onTap: { coordinate, meters in mapTapped(at: coordinate, within: meters) },
+                    routes: shownRoutes, routesKey: shownRoutesKey,
+                    draft: planner.map { TopoMapView.RouteDraft(waypoints: $0.waypoints, legs: $0.legs,
+                                                                key: "\(ObjectIdentifier($0).hashValue)|\($0.version)",
+                                                                selected: $0.selected) },
+                    liveLine: recorder.points, liveVersion: recorder.version,
+                    onWaypoint: waypointEvent)
             .ignoresSafeArea()
             .overlay(alignment: .top) {
                 VStack(spacing: 8) {
                     topBar
                     if let pin {
                         pinChip(pin)
+                    }
+                    if let following {
+                        FollowChip(route: following, progress: progress, onStop: stopFollowing)
                     }
                     if nzNeedsKey {
                         Text(offlineOnly
@@ -150,6 +184,10 @@ struct ContentView: View {
                     if case .ready(let profile) = trackProfile {
                         TrackDetailView(track: track, profile: profile, onScrub: { profileMarker = $0 })
                     }
+                case .route(let route):
+                    if case .ready(let profile) = trackProfile {
+                        TrackDetailView(track: route.asTrack, profile: profile, onScrub: { profileMarker = $0 })
+                    }
                 default: EmptyView()
                 }
             }
@@ -158,7 +196,7 @@ struct ContentView: View {
             .task { await campgrounds.refreshIfStale(offlineOnly: offlineOnly) }
             .task(id: profileTaskID) {
                 profileMarker = nil
-                guard case .track(let t) = card else {
+                guard let t = cardTrack else {
                     trackProfile = nil
                     return
                 }
@@ -174,6 +212,140 @@ struct ContentView: View {
                 }
             }
             .onAppear { controller.requestLocationPermission() }
+            .modifier(routeFeatures)
+    }
+
+    // MARK: - Routes and recording
+
+    /// Routes drawn on the map (a route being edited is drawn as the draft instead).
+    private var shownRoutes: [SavedRoute] {
+        routes.shown.filter { $0.id != planner?.editing?.id }
+    }
+    private var shownRoutesKey: String { "\(routes.shownKeyForMap)|\(planner?.editing?.id.uuidString ?? "")" }
+
+    private var routeFeatures: RouteFeatures {
+        RouteFeatures(showRoutes: $showRoutes, namingRoute: $namingRoute, leftoverWalk: $leftoverWalk,
+                      importMessage: $importMessage, planner: planner, plannerProfile: $plannerProfile,
+                      recorder: recorder, scenePhase: scenePhase, offlineOnly: offlineOnly, library: store.library,
+                      onSelect: { showRoute($0) }, onNewRoute: { startPlanning(nil) }, onEdit: { startPlanning($0) },
+                      onSaveRoute: saveRoute, onContinueWalk: { walk in
+                          recorder.resume(walk, detail: WalkRecorder.Detail(rawValue: recordingDetail) ?? .standard)
+                      }, onFinishWalk: finishLeftover, onOpenFile: openFile, onAppear: checkLeftoverWalk)
+    }
+
+    private func mapTapped(at c: CLLocationCoordinate2D, within meters: Double) {
+        if let planner {
+            planner.offlineOnly = offlineOnly
+            planner.tap(c, tolerance: meters)
+            return
+        }
+        // The user's own routes first.
+        if controller.zoomLevel >= 9,
+           let route = shownRoutes.min(by: { $0.distanceMeters(to: c) < $1.distanceMeters(to: c) }),
+           route.distanceMeters(to: c) <= meters {
+            trackLookup?.cancel()
+            pin = nil
+            card = .route(route)
+            return
+        }
+        lookUpTrack(at: c, within: meters)
+    }
+
+    private func waypointEvent(_ event: TopoMapView.WaypointEvent) {
+        guard let planner else { return }
+        switch event {
+        case .tap(let i): planner.select(i)
+        case .move(let i, let c):
+            planner.select(nil)
+            planner.offlineOnly = offlineOnly
+            planner.move(i, to: c, tolerance: 40)
+        }
+    }
+
+    private func startPlanning(_ route: SavedRoute?) {
+        card = nil
+        pin = nil
+        plannerProfile = nil
+        planner = RoutePlanner(library: store.library, offlineOnly: offlineOnly, editing: route)
+        if let route { controller.show(route.bbox) }
+    }
+
+    private func saveRoute() {
+        guard let planner else { return }
+        let route = planner.route
+        routes.save(route)
+        routes.setShown(route.id, true)
+        self.planner = nil
+        card = .route(route)
+    }
+
+    private func showRoute(_ route: SavedRoute) {
+        routes.setShown(route.id, true)
+        pin = nil
+        card = .route(route)
+        controller.show(route.bbox)
+    }
+
+    private func startRecording() {
+        recorder.start(detail: WalkRecorder.Detail(rawValue: recordingDetail) ?? .standard)
+        controller.followUser()
+    }
+
+    private func stopRecording() {
+        if let walk = recorder.stop() { card = .route(walk) }
+    }
+
+    private func checkLeftoverWalk() {
+        guard !recorder.isRecording, leftoverWalk == nil else { return }
+        leftoverWalk = routes.routes.first { $0.inProgress }
+    }
+
+    private func finishLeftover(_ walk: SavedRoute) {
+        var w = walk
+        w.inProgress = false
+        if (w.legs.first?.coords.count ?? 0) >= 4 {
+            routes.save(w)
+            routes.setShown(w.id, true)
+        } else {
+            routes.delete(w)
+        }
+    }
+
+    private func openFile(_ url: URL) {
+        let added = routes.importGPX(at: url)
+        if let first = added.first {
+            showRoute(first)
+            if added.count > 1 { importMessage = "Imported \(added.count) routes." }
+        } else {
+            importMessage = "No routes or tracks found in that file."
+        }
+    }
+
+    private func startFollowing(_ route: SavedRoute) {
+        controller.requestLocationPermission()
+        following = route
+        followPath = route.path
+        progress = nil
+        let update: (CLLocationCoordinate2D) -> Void = { c in updateProgress(c) }
+        controller.onUserLocation = { update($0.coordinate) }
+        recorder.onFix = update
+        if let here = controller.userLocation { update(here.coordinate) }
+    }
+
+    private func stopFollowing() {
+        following = nil
+        followPath = []
+        progress = nil
+        controller.onUserLocation = nil
+        recorder.onFix = nil
+    }
+
+    private func updateProgress(_ c: CLLocationCoordinate2D) {
+        guard following != nil, let p = RouteProgress.locate(c, on: followPath, previous: progress?.done) else { return }
+        if p.isOffRoute, progress?.isOffRoute != true {
+            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        }
+        progress = p
     }
 
     /// When the map moves out of the selected state's map into another state, switch to that
@@ -328,7 +500,69 @@ struct ContentView: View {
             if downloads.isRunning {
                 DownloadProgressCard()
             }
+            if recorder.isRecording {
+                RecordingCard(recorder: recorder, onStop: stopRecording)
+            }
+            if let planner {
+                RoutePlannerCard(planner: planner, profile: plannerProfile,
+                                 onSave: { namingRoute = true },
+                                 onCancel: { self.planner = nil })
+            } else {
+                cardView
+            }
+            HStack {
+                ScaleBar(mapView: mapView)
+                    .frame(width: 170, height: 26, alignment: .leading)
+                    .allowsHitTesting(false)
+                Spacer()
+                if recordingEnabled, !recorder.isRecording, planner == nil {
+                    Button(action: startRecording) {
+                        Label("Record", systemImage: "record.circle")
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, 14).padding(.vertical, 9)
+                            .background(.regularMaterial, in: Capsule())
+                            .foregroundStyle(.red)
+                    }
+                    .accessibilityHint("Records your walk with GPS, also while the phone is locked")
+                }
+            }
+            HStack(spacing: 12) {
+                RoundButton(systemImage: "location.fill", label: "My location") { controller.followUser() }
+                Button {
+                    showDownload = true
+                } label: {
+                    Label("Download", systemImage: "arrow.down.circle.fill")
+                        .font(.body.weight(.semibold))
+                        .padding(.horizontal, 18).padding(.vertical, 12)
+                        .background(.tint, in: Capsule())
+                        .foregroundStyle(.white)
+                }
+                .disabled(downloads.isRunning || offlineOnly)  // downloading needs the network
+                .accessibilityLabel("Download area")
+                .accessibilityHint(offlineOnly ? "Switch to Online to download" : "")
+                RoundButton(systemImage: "square.stack.3d.down.right", label: "Offline maps") { showRegions = true }
+                RoundButton(systemImage: "point.topleft.down.to.point.bottomright.curvepath", label: "Routes") { showRoutes = true }
+            }
+            Text(attribution)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 6))
+        }
+        .padding(.horizontal)
+        .padding(.bottom, 6)
+    }
+
+    @ViewBuilder
+    private var cardView: some View {
             switch card {
+            case .route(let route):
+                RouteCard(route: route, profile: trackProfile, isFollowing: following?.id == route.id,
+                          onOpen: { if case .ready = trackProfile { details = .route(route) } },
+                          onZoom: { controller.show(route.bbox) },
+                          onClose: { card = nil },
+                          onFollow: { following?.id == route.id ? stopFollowing() : startFollowing(route) },
+                          onEdit: { startPlanning(route) })
             case .track(let track):
                 TrackCard(track: track, profile: trackProfile,
                           onOpen: { if case .ready = trackProfile { details = .track(track) } },
@@ -347,35 +581,6 @@ struct ContentView: View {
             case nil:
                 EmptyView()
             }
-            HStack {
-                ScaleBar(mapView: mapView)
-                    .frame(width: 170, height: 26, alignment: .leading)
-                    .allowsHitTesting(false)
-                Spacer()
-            }
-            HStack(spacing: 12) {
-                RoundButton(systemImage: "location.fill", label: "My location") { controller.followUser() }
-                Button {
-                    showDownload = true
-                } label: {
-                    Label("Download area", systemImage: "arrow.down.circle.fill")
-                        .font(.body.weight(.semibold))
-                        .padding(.horizontal, 18).padding(.vertical, 12)
-                        .background(.tint, in: Capsule())
-                        .foregroundStyle(.white)
-                }
-                .disabled(downloads.isRunning || offlineOnly)  // downloading needs the network
-                .accessibilityHint(offlineOnly ? "Switch to Online to download" : "")
-                RoundButton(systemImage: "square.stack.3d.down.right", label: "Offline maps") { showRegions = true }
-            }
-            Text(attribution)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 8).padding(.vertical, 3)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 6))
-        }
-        .padding(.horizontal)
-        .padding(.bottom, 6)
     }
 
     /// Credit for what's on screen: the chosen map, plus the national map only when it's shown under it.

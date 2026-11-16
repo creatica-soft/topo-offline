@@ -13,6 +13,8 @@ final class MapController {
 
     @ObservationIgnored weak var mapView: MKMapView?
     @ObservationIgnored private let locationManager = CLLocationManager()
+    /// Called with each position MapKit reports for the blue dot (while the app is on screen).
+    @ObservationIgnored var onUserLocation: ((CLLocation) -> Void)?
 
     static let australia = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: -28, longitude: 134),
@@ -43,6 +45,7 @@ final class MapController {
     }
 
     var center: CLLocationCoordinate2D? { visibleArea?.center }
+    var userLocation: CLLocation? { mapView?.userLocation.location }
 
     func followUser() {
         requestLocationPermission()

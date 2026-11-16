@@ -5,7 +5,7 @@ permalink: /privacy/
 
 # Topo Offline privacy policy
 
-*Effective 12 November 2026*
+*Effective 16 November 2026*
 
 **Short version:** Topo Offline doesn't collect any information about you. There's no account,
 no advertising, no analytics and no tracking, and the app has no server of its own. Your location
@@ -21,9 +21,14 @@ stays on your phone.
 
 ## Your location
 
-If you allow it, the app uses your phone's location to show where you are on the map. Your
-location is used only on your phone and is never sent anywhere by the app. You can turn location
-access off at any time in Settings › Privacy & Security › Location Services.
+If you allow it, the app uses your phone's location to show where you are on the map, and to
+show your progress along a route you're following. Your location is used only on your phone and
+is never sent anywhere by the app. You can turn location access off at any time in Settings ›
+Privacy & Security › Location Services.
+
+Walk recording is off unless you turn it on. While you're recording a walk, the app keeps using
+your location when the phone is locked or another app is open, and iOS shows a location indicator
+while it does. Recording stops when you tap Stop. Recorded walks are saved only on your phone.
 
 ## Map and data requests
 
@@ -55,7 +60,10 @@ Offline mode. The app is built with Apple's iOS and MapKit frameworks, which are
 ## Data stored on your phone
 
 Maps and data you download and your saved areas are stored only on your phone. They aren't
-included in iCloud backups and aren't shared. Your settings (such as the map you last chose) are
+included in iCloud backups and aren't shared. Your routes and recorded walks are also stored only
+on your phone. They are included in your own device backups (iCloud or computer), like any app's
+documents. They leave the phone only if you share them as a GPX file yourself. A GPX file you
+import is copied into the app and isn't sent anywhere. Your settings (such as the map you last chose) are
 stored like any app's settings and are included in your own device backups. Delete a saved area
 in the app, or delete the app to remove everything.
 
