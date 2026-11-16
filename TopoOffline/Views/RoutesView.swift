@@ -27,7 +27,6 @@ struct RoutesView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("recordingEnabled") private var recordingEnabled = false
     @Environment(\.units) private var units
-    @AppStorage("recordingDetail") private var recordingDetail = WalkRecorder.Detail.standard.rawValue
 
     let onSelect: (SavedRoute) -> Void
     let onNewRoute: () -> Void
@@ -66,21 +65,11 @@ struct RoutesView: View {
                     }
                 }
 
-                Section {
-                    Toggle("Record walks", isOn: $recordingEnabled)
-                    if recordingEnabled {
-                        Picker("Detail", selection: $recordingDetail) {
-                            ForEach(WalkRecorder.Detail.allCases) { d in
-                                Text(d.title).tag(d.rawValue)
-                            }
-                        }
+                if !recordingEnabled {
+                    Section {
+                    } footer: {
+                        Text("To record your walks with GPS, turn on Walk recording in Settings (the gear on the map).")
                     }
-                } header: {
-                    Text("Recording")
-                } footer: {
-                    Text(recordingEnabled
-                         ? "\(WalkRecorder.Detail(rawValue: recordingDetail)?.explanation ?? "") A record button appears on the map. Recording keeps GPS on while the phone is locked, which uses a lot more battery: carry a power bank on long walks. Your walks stay on your iPhone."
-                         : "Off to save battery. When on, a record button appears on the map.")
                 }
             }
             .navigationTitle("Routes")
