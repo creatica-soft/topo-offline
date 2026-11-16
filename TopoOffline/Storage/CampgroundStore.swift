@@ -17,44 +17,81 @@ final class CampgroundStore {
 
     @ObservationIgnored private let fileURL: URL
     @ObservationIgnored private var refreshing = false
-    @ObservationIgnored private var lastUSAttempt: Date?
+    /// Regions whose campgrounds are wanted (the map has shown them); Australia always.
+    @ObservationIgnored private var regions: Set<OfficialCampgrounds.Region>
+    @ObservationIgnored private var lastAttempt: [OfficialCampgrounds.Region: Date] = [:]
+    @ObservationIgnored private let regionsKey: String
     static let maxAge: TimeInterval = 14 * 24 * 3600
 
+    /// Community (OpenStreetMap) extracts beyond Australia and New Zealand, loaded the first time
+    /// the map shows their area.
+    @ObservationIgnored private var pendingExtracts: [(area: BoundingBox, url: URL)]
+
     init(directory: URL = OfflineTileLibrary.defaultDirectory,
-         bundledExtract: URL? = Bundle.main.url(forResource: "osm-campsites", withExtension: "json")) {
+         bundledExtract: URL? = Bundle.main.url(forResource: "osm-campsites", withExtension: "json"),
+         moreExtracts: [(area: BoundingBox, url: URL)] = CommunityCampsites.bundledRegions,
+         regionsKey: String = "campgroundRegions") {
         fileURL = directory.appendingPathComponent("official-campgrounds.json")
+        self.regionsKey = regionsKey
+        var saved: [Campsite] = []
         if let data = try? Data(contentsOf: fileURL),
-           let saved = try? JSONDecoder().decode([String: [Campsite]].self, from: data) {
-            official = saved.values.flatMap { $0 }
+           let bySource = try? JSONDecoder().decode([String: [Campsite]].self, from: data) {
+            saved = bySource.values.flatMap { $0 }
         }
+        var regions: Set<OfficialCampgrounds.Region> = [.australia]
+        for raw in UserDefaults.standard.stringArray(forKey: regionsKey) ?? [] {
+            if let r = OfficialCampgrounds.Region(rawValue: raw) { regions.insert(r) }
+        }
+        // Campgrounds saved before regions were remembered.
+        for r in OfficialCampgrounds.Region.allCases where saved.contains(where: { r.sources.contains($0.source ?? "") }) {
+            regions.insert(r)
+        }
+        self.regions = regions
+        official = saved
         let loaded = CommunityCampsites.load(from: bundledExtract)
         community = loaded.sites
         communityDate = loaded.generated
+        pendingExtracts = moreExtracts
     }
 
-    var hasUSSites: Bool { official.contains { $0.source == CampSource.usfs } }
+    /// Loads any community extract covering `area` that isn't loaded yet (off the main thread).
+    func loadCommunity(for area: BoundingBox) async {
+        let due = pendingExtracts.filter { $0.area.intersects(area) }
+        guard !due.isEmpty else { return }
+        pendingExtracts.removeAll { e in due.contains { $0.url == e.url } }
+        for extract in due {
+            let url = extract.url
+            let loaded = await Task.detached(priority: .utility) { CommunityCampsites.load(from: url) }.value
+            community += loaded.sites
+        }
+    }
 
-    /// Refreshes the saved campgrounds when they're over a fortnight old. US sites are fetched only
-    /// once the map has shown the US (`area`), so people elsewhere never download them.
+    func wants(_ region: OfficialCampgrounds.Region) -> Bool { regions.contains(region) }
+
+    /// Refreshes the saved campgrounds when they're over a fortnight old. A region's sources are
+    /// fetched only once the map has shown it (`area`), so people elsewhere never download them.
+    /// Cheap to call on every map move.
     func refreshIfStale(offlineOnly: Bool, area: BoundingBox? = nil) async {
+        if let area { await loadCommunity(for: area) }
         guard !offlineOnly, !refreshing else { return }
-        let hasUS = hasUSSites
-        let wantsUS = hasUS || (area?.intersects(TileSources.usCoverage) ?? false)
+        if let area {
+            let shown = OfficialCampgrounds.Region.allCases.filter { !regions.contains($0) && $0.isShown(by: area) }
+            if !shown.isEmpty {
+                regions.formUnion(shown)
+                UserDefaults.standard.set(regions.map(\.rawValue), forKey: regionsKey)
+            }
+        }
+        let have = Set(official.compactMap(\.source))
+        let missing = regions.filter { !$0.sources.contains(where: have.contains) }
         let modified = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
         let fresh = (modified.map { Date().timeIntervalSince($0) < Self.maxAge } ?? false) && !official.isEmpty
-        let missingUS = wantsUS && !hasUS
-        if fresh && !missingUS { return }
-        // Don't retry a failed US fetch on every map move.
-        if fresh, let last = lastUSAttempt, Date().timeIntervalSince(last) < 600 { return }
+        // Don't retry a failing region on every map move.
+        let due = (fresh ? missing : regions).filter { lastAttempt[$0].map { Date().timeIntervalSince($0) > 600 } ?? true }
+        guard !due.isEmpty else { return }
         refreshing = true
         defer { refreshing = false }
-        if missingUS { lastUSAttempt = Date() }
-        let fetched: [String: [Campsite]]
-        if fresh {
-            fetched = (try? await OfficialCampgrounds.usfs()).map { [CampSource.usfs: $0] } ?? [:]
-        } else {
-            fetched = await OfficialCampgrounds.fetch(includeUS: wantsUS)
-        }
+        for r in due { lastAttempt[r] = Date() }
+        let fetched = await OfficialCampgrounds.fetch(regions: due)
         guard !fetched.isEmpty else { return }
         // Keep the previous data for any source that failed this time.
         var bySource = Dictionary(grouping: official, by: { $0.source ?? "" })
@@ -94,7 +131,7 @@ final class CampgroundStore {
     /// State sources first, so they win when two official sources list the same campground.
     nonisolated private static func rank(_ s: Campsite) -> Int {
         switch s.source {
-        case CampSource.nswParks, CampSource.vicmap: return 0
+        case CampSource.nswParks, CampSource.vicmap, CampSource.parksCanada, CampSource.bcRecSites, CampSource.usfs: return 0
         default: return 1
         }
     }

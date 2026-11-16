@@ -40,14 +40,16 @@ mostly government agencies:
 - Toitū Te Whenua Land Information New Zealand (LINZ) and the New Zealand Department of
   Conservation
 - the U.S. Geological Survey (The National Map) and the USDA Forest Service
+- Natural Resources Canada, Parks Canada, the governments of British Columbia and Ontario, swisstopo (the Swiss Federal Office of Topography, via geo.admin.ch)
+  and Kartverket (the Norwegian Mapping Authority, via Geonorge)
 - Terrain Tiles on Amazon Web Services (elevation data)
 
 Some of these services are hosted on Esri ArcGIS Online or Amazon Web Services. Like any website,
 a service receives the technical information needed to answer a request: your device's internet
-address and which map area or place name was requested. When you search for a place in
-Australia, the text you type is sent to Geoscience Australia's place-name service, and in the
-United States to the U.S. Geological Survey's. New Zealand place names are searched on your
-phone. The app sends nothing else, and no identifier that links requests to you. How each service handles its own server logs is set out in its own privacy
+address and which map area or place name was requested. When you search for a place,
+the text you type is sent to the place-name service of the country the map is showing:
+Geoscience Australia, the U.S. Geological Survey, Natural Resources Canada, swisstopo or
+Kartverket. New Zealand place names are searched on your phone. The app sends nothing else, and no identifier that links requests to you. How each service handles its own server logs is set out in its own privacy
 policy.
 
 You can switch the app to **Offline** mode, and it will make no requests at all and use only maps

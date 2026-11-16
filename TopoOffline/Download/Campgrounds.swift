@@ -5,18 +5,127 @@ import Foundation
 /// (TAS, SA, WA, NT, ACT), which carry little more than a name; and US Forest Service campgrounds
 /// (with open/closed status, season and booking page). Small enough to fetch in one go.
 enum OfficialCampgrounds {
-    /// The Australian sources, plus the US Forest Service when `includeUS`.
-    static func fetch(includeUS: Bool = false, session: URLSession = TileNetwork.browse) async -> [String: [Campsite]] {
-        async let nsw = try? nswParks(session: session)
-        async let vic = try? vicmap(session: session)
-        async let ga = try? gazetteer(session: session)
-        async let us = includeUS ? try? usfs(session: session) : nil
-        var out: [String: [Campsite]] = [:]
-        if let v = await nsw { out[CampSource.nswParks] = v }
-        if let v = await vic { out[CampSource.vicmap] = v }
-        if let v = await ga { out[CampSource.gazetteer] = v }
-        if let v = await us { out[CampSource.usfs] = v }
-        return out
+    /// Groups of sources, fetched only once the map has shown the region (so people in Australia
+    /// never download Canadian campgrounds, and the reverse).
+    enum Region: String, CaseIterable, Sendable {
+        case australia, us, canada
+
+        var sources: [String] {
+            switch self {
+            case .australia: return [CampSource.nswParks, CampSource.vicmap, CampSource.gazetteer]
+            case .us: return [CampSource.usfs]
+            case .canada: return [CampSource.parksCanada, CampSource.bcRecSites]
+            }
+        }
+
+        /// Whether the map showing `area` means this region's campgrounds are wanted.
+        func isShown(by area: BoundingBox) -> Bool {
+            switch self {
+            case .australia: return area.intersects(TileSources.australia.coverage)
+            case .us: return TileSources.us.touches(area)
+            case .canada: return TileSources.ca.touches(area)
+            }
+        }
+    }
+
+    /// The sources of `regions`, by source. A source that fails is left out (the caller keeps its old data).
+    static func fetch(regions: Set<Region> = [.australia], session: URLSession = TileNetwork.browse) async -> [String: [Campsite]] {
+        await withTaskGroup(of: (String, [Campsite]?).self) { group in
+            for region in regions {
+                for source in region.sources {
+                    group.addTask { (source, try? await fetch(source: source, session: session)) }
+                }
+            }
+            var out: [String: [Campsite]] = [:]
+            for await (source, sites) in group { if let sites { out[source] = sites } }
+            return out
+        }
+    }
+
+    private static func fetch(source: String, session: URLSession) async throws -> [Campsite] {
+        switch source {
+        case CampSource.nswParks: return try await nswParks(session: session)
+        case CampSource.vicmap: return try await vicmap(session: session)
+        case CampSource.gazetteer: return try await gazetteer(session: session)
+        case CampSource.usfs: return try await usfs(session: session)
+        case CampSource.parksCanada: return try await parksCanada(session: session)
+        case CampSource.bcRecSites: return try await bcRecSites(session: session)
+        default: return []
+        }
+    }
+
+    /// Parks Canada campgrounds: the open data lists every campsite (about 12,000), so sites with the
+    /// same name within about 2 km are folded into one campground pin.
+    static func parksCanada(session: URLSession = TileNetwork.browse) async throws -> [Campsite] {
+        let url = URL(string: "https://services2.arcgis.com/wCOMu5IS7YdSyPNx/ArcGIS/rest/services/vw_Accommodation_Hebergement_V2_FGP/FeatureServer/0/query")!
+        let points = try await arcgis(url, where: "1=1", fields: "OBJECTID,Name_e,URL_e,Accommodation_Type", session: session)
+        struct Group { var name: String; var lat = 0.0, lon = 0.0, count = 0; var types = Set<String>(); var url: String? }
+        var groups: [String: Group] = [:]
+        for (a, lon, lat) in points {
+            guard let name = (a["Name_e"] as? String)?.trimmingCharacters(in: .whitespaces), !name.isEmpty,
+                  lat != 0 || lon != 0 else { continue }
+            // "Cabin//Chalet" -> "Cabin"
+            let type = ((a["Accommodation_Type"] as? String) ?? "").components(separatedBy: "//").first ?? ""
+            guard !["Mooring", "None", ""].contains(type) else { continue }
+            let key = "\(name)|\((lat / 0.02).rounded())|\((lon / 0.02).rounded())"
+            var g = groups[key] ?? Group(name: name)
+            g.lat += lat; g.lon += lon; g.count += 1
+            g.types.insert(type)
+            if g.url == nil, let u = a["URL_e"] as? String, u.hasPrefix("http") { g.url = u }
+            groups[key] = g
+        }
+        return groups.map { key, g in
+            let roofedOnly = g.types.isSubset(of: ["Backcountry accommodation", "Cabin", "Historic stay", "MicrOcube", "Oasis", "Tipi", "Yurt", "oTENTik"])
+            var detail = ["\(g.count) \(g.count == 1 ? "site" : "sites")"]
+            let extras = g.types.subtracting(["Camping"]).sorted()
+            if !extras.isEmpty { detail.append(extras.joined(separator: ", ")) }
+            detail.append("Parks Canada")
+            return Campsite(id: "pc-\(key)", name: g.name, kind: roofedOnly ? "Hut" : "Campsite", camping: !roofedOnly,
+                            lat: g.lat / Double(g.count), lon: g.lon / Double(g.count),
+                            detail: detail.joined(separator: " · "), source: CampSource.parksCanada, website: g.url)
+        }
+    }
+
+    /// British Columbia recreation sites with campsites. Only the fields needed are requested:
+    /// the dataset also names site operators, which the app never fetches.
+    static func bcRecSites(session: URLSession = TileNetwork.browse) async throws -> [Campsite] {
+        let structures = (1...10).map { "STRUCTURE_DESC\($0)" }
+        let fields = ["FOREST_FILE_ID", "PROJECT_NAME", "NUM_CAMP_SITES", "MAINTAIN_STD_DESC", "SUB_ACCESS_DESC1", "GEOMETRY"] + structures
+        var comps = URLComponents(string: "https://openmaps.gov.bc.ca/geo/pub/wfs")!
+        comps.queryItems = [
+            URLQueryItem(name: "service", value: "WFS"), URLQueryItem(name: "version", value: "2.0.0"),
+            URLQueryItem(name: "request", value: "GetFeature"),
+            URLQueryItem(name: "typeNames", value: "pub:WHSE_FOREST_TENURE.FTEN_REC_SITE_POINTS_SVW"),
+            URLQueryItem(name: "outputFormat", value: "application/json"), URLQueryItem(name: "srsName", value: "EPSG:4326"),
+            URLQueryItem(name: "propertyName", value: fields.joined(separator: ",")),
+            URLQueryItem(name: "cql_filter", value: "NUM_CAMP_SITES > 0"),
+            URLQueryItem(name: "count", value: "10000"),
+        ]
+        let (data, response) = try await session.data(from: comps.url!)
+        guard (response as? HTTPURLResponse)?.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let features = json["features"] as? [[String: Any]] else { throw URLError(.badServerResponse) }
+        return features.compactMap { f in
+            guard let p = f["properties"] as? [String: Any], let g = f["geometry"] as? [String: Any],
+                  let c = (g["coordinates"] as? [Double]) ?? (g["coordinates"] as? [[Double]])?.first, c.count >= 2,
+                  let raw = (p["PROJECT_NAME"] as? String)?.trimmingCharacters(in: .whitespaces), !raw.isEmpty else { return nil }
+            let name = raw == raw.uppercased() ? TrackSources.titleCase(raw) : raw
+            let built = structures.compactMap { (p[$0] as? String)?.lowercased() }
+            var amenities: [String] = []
+            if built.contains(where: { $0.contains("toilet") }) { amenities.append("Toilets") }
+            if built.contains(where: { $0.contains("table") }) { amenities.append("Tables") }
+            if built.contains(where: { $0.contains("fire ring") }) { amenities.append("Fire rings") }
+            if built.contains(where: { $0.contains("boat launch") }) { amenities.append("Boat launch") }
+            if let access = p["SUB_ACCESS_DESC1"] as? String, !access.isEmpty { amenities.append("Access: \(access)") }
+            let sites = (p["NUM_CAMP_SITES"] as? Int) ?? 0
+            var detail = ["\(sites) campsite\(sites == 1 ? "" : "s")"]
+            if let standard = p["MAINTAIN_STD_DESC"] as? String, !standard.isEmpty { detail.append(standard) }
+            let file = (p["FOREST_FILE_ID"] as? String) ?? ""
+            return Campsite(id: "bc-rec-\(file.isEmpty ? name : file)", name: name, kind: "Campsite", camping: true,
+                            lat: c[1], lon: c[0], detail: detail.joined(separator: " · "), source: CampSource.bcRecSites,
+                            amenities: amenities.isEmpty ? nil : amenities,
+                            website: file.isEmpty ? nil : "https://www.sitesandtrailsbc.ca/resource/\(file)")
+        }
     }
 
     /// US Forest Service campgrounds (about 3,500).
@@ -143,8 +252,15 @@ enum OfficialCampgrounds {
 
 /// The OpenStreetMap campsite extract bundled with the app (see Tools/update-osm-campsites.py).
 enum CommunityCampsites {
-    /// Where the extract is published (the ODbL requires making it available).
-    static let publishedExtractURL = URL(string: "https://github.com/creatica-soft/topo-offline/blob/main/TopoOffline/Resources/osm-campsites.json")!
+    /// Where the extracts are published (the ODbL requires making them available).
+    static let publishedExtractURL = URL(string: "https://github.com/creatica-soft/topo-offline/tree/main/TopoOffline/Resources")!
+
+    /// Extracts beyond Australia and New Zealand, with the area each covers (loaded when shown).
+    static var bundledRegions: [(area: BoundingBox, url: URL)] {
+        [("osm-campsites-na", BoundingBox(minLat: 17.5, minLon: -180, maxLat: 84, maxLon: -52)),
+         ("osm-campsites-europe", BoundingBox(minLat: 45.8, minLon: 4.3, maxLat: 71.6, maxLon: 31.5))]
+            .compactMap { name, area in Bundle.main.url(forResource: name, withExtension: "json").map { (area, $0) } }
+    }
 
     private struct Extract: Decodable {
         struct Site: Decodable {
@@ -164,10 +280,11 @@ enum CommunityCampsites {
         guard let url, let data = try? Data(contentsOf: url),
               let extract = try? JSONDecoder().decode(Extract.self, from: data) else { return ([], nil) }
         let sites = extract.sites.map { s -> Campsite in
-            let caravan = s.t == "v"
+            let caravan = s.t == "v", hut = s.t == "h"
             let tags = s.f ?? [:]
-            return Campsite(id: "osm-\(s.i)", name: s.n ?? (caravan ? "Caravan park" : "Campsite"),
-                            kind: caravan ? "Caravan park" : "Campsite", camping: true,
+            let kind = hut ? "Hut" : (caravan ? "Caravan park" : "Campsite")
+            return Campsite(id: "osm-\(s.i)", name: s.n ?? kind,
+                            kind: kind, camping: !hut || tags["tents"] == "yes",
                             fee: tags["fee"] == "yes",
                             access: tags["description"],
                             lat: s.a, lon: s.o, source: CampSource.osm,

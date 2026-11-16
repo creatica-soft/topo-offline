@@ -153,9 +153,8 @@ struct ContentView: View {
                 if let area = controller.visibleArea, ParkInfoStore.covers(area) {
                     Task { await parkInfo.refreshIfStale(offlineOnly: offlineOnly) }
                 }
-                // US Forest Service campgrounds load the first time the map shows the US.
-                if let area = controller.visibleArea, controller.zoomLevel >= 6,
-                   area.intersects(TileSources.usCoverage), !campgrounds.hasUSSites {
+                // Campgrounds for a country load the first time the map shows it.
+                if let area = controller.visibleArea, controller.zoomLevel >= 6 {
                     Task { await campgrounds.refreshIfStale(offlineOnly: offlineOnly, area: area) }
                 }
                 loadNZNamesIfNeeded()

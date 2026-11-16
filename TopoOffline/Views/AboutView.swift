@@ -15,7 +15,7 @@ struct AboutView: View {
 
             Section {
                 Text("Maps can be out of date or wrong. Always carry a paper map, compass and a way to call for help, and check park alerts before you go.")
-                Text("Closures are shown for Victorian state forests and reserves (only while their dates say they apply), for New Zealand DOC tracks, huts and campsites, and for US Forest Service campgrounds (as the Forest Service lists them, refreshed every two weeks). A track or campsite without a closure shown may still be closed: Australian national parks, other states and US national parks aren't covered, and DOC and Forest Service pages have more detail.")
+                Text("Closures are shown for Victorian state forests and reserves (only while their dates say they apply), for New Zealand DOC tracks, huts and campsites, and for US Forest Service campgrounds (as the Forest Service lists them, refreshed every two weeks). A track, hut or campsite without a closure shown may still be closed: Australian national parks and other states, US national parks, Canada, Switzerland and Norway aren't covered. Check the park or trail organisation's page before you go.")
             } header: {
                 Text("Safety")
             }
@@ -57,9 +57,30 @@ struct AboutView: View {
                 }
                 .padding(.vertical, 2)
                 VStack(alignment: .leading, spacing: 4) {
+                    Text("Canada").font(.headline)
+                    Text("Campgrounds: \(CampSource.parksCanadaCredit); \(CampSource.bcRecSitesCredit)").font(.footnote)
+                    ForEach(TrackSources.attributions(for: "CA"), id: \.self) { Text($0).font(.footnote) }
+                    Text(CANames.attribution).font(.footnote)
+                    Link("Open Government Licence – Canada", destination: TileSources.ca.licenceURL).font(.footnote)
+                }
+                .padding(.vertical, 2)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Switzerland").font(.headline)
+                    ForEach(TrackSources.attributions(for: "CH"), id: \.self) { Text($0).font(.footnote) }
+                    Text(CHNames.attribution).font(.footnote)
+                }
+                .padding(.vertical, 2)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Norway").font(.headline)
+                    ForEach(TrackSources.attributions(for: "NO"), id: \.self) { Text($0).font(.footnote) }
+                    Text(NONames.attribution).font(.footnote)
+                    Link("kartverket.no", destination: URL(string: "https://kartverket.no")!).font(.footnote)
+                }
+                .padding(.vertical, 2)
+                VStack(alignment: .leading, spacing: 4) {
                     Text("Campgrounds").font(.headline)
                     Text("NSW campgrounds: © State Government of NSW and NSW Department of Climate Change, Energy, the Environment and Water 2026, CC BY. Vicmap Features of Interest © State of Victoria, CC BY 4.0; Composite Gazetteer of Australia © Geoscience Australia, CC BY 4.0.").font(.footnote)
-                    Text("Community campsites and facilities: \(CampSource.osmCredit). Shown in teal; may be out of date.").font(.footnote)
+                    Text("Community campsites, huts and facilities: \(CampSource.osmCredit). Shown in teal; may be out of date.").font(.footnote)
                     Link("OpenStreetMap licence (ODbL)", destination: URL(string: "https://www.openstreetmap.org/copyright")!).font(.footnote)
                     Link("Download the campsite data used by this app", destination: CommunityCampsites.publishedExtractURL).font(.footnote)
                 }
@@ -74,6 +95,9 @@ struct AboutView: View {
                     Text(Gazetteer.attribution).font(.footnote)
                     Link("CC BY 4.0", destination: URL(string: "https://creativecommons.org/licenses/by/4.0/")!).font(.footnote)
                     Text(USPlaceNames.attribution).font(.footnote)
+                    Text(CANames.attribution).font(.footnote)
+                    Text(CHNames.attribution).font(.footnote)
+                    Text(NONames.attribution).font(.footnote)
                 }
                 .padding(.vertical, 2)
             } header: {

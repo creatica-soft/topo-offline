@@ -70,6 +70,8 @@ struct Campsite: Codable, Identifiable, Hashable, Sendable {
         case CampSource.vicmap: return "Vicmap Features of Interest © State of Victoria, CC BY 4.0"
         case CampSource.gazetteer: return "Composite Gazetteer of Australia © Geoscience Australia, CC BY 4.0"
         case CampSource.usfs: return CampSource.usfsCredit
+        case CampSource.parksCanada: return CampSource.parksCanadaCredit
+        case CampSource.bcRecSites: return CampSource.bcRecSitesCredit
         default: return region == "NZ" ? NZParkData.attribution : VicParkData.attribution
         }
     }
@@ -82,6 +84,10 @@ enum CampSource {
     static let gazetteer = "ga"
     static let usfs = "usfs"
     static let usfsCredit = "USDA Forest Service recreation sites (public domain)"
+    static let parksCanada = "parks-canada"
+    static let parksCanadaCredit = "Parks Canada accommodation, Open Government Licence – Canada"
+    static let bcRecSites = "bc-rec"
+    static let bcRecSitesCredit = "Recreation Sites and Trails BC, Open Government Licence – British Columbia"
     static let osmCredit = "© OpenStreetMap contributors (community data, ODbL)"
 }
 
