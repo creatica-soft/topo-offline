@@ -73,7 +73,7 @@ where its data is shown.
 
 | Data | Source | Licence |
 |---|---|---|
-| NSW topo map, NSW paths | NSW Spatial Services (DCS) | CC BY 4.0 (web services terms) |
+| NSW topo map, NSW paths | © State of New South Wales (DCS Spatial Services) | CC BY 4.0 (confirmed by Spatial Services) |
 | Queensland topo map | Queensland Government | CC BY 4.0 |
 | Queensland walking tracks | Queensland Parks (Department of Environment and Science) | CC BY 4.0 |
 | Tasmania topo map and tracks | the LIST, State of Tasmania | CC BY 3.0 AU |

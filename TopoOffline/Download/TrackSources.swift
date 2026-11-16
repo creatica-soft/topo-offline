@@ -34,7 +34,7 @@ enum TrackSources {
         outFields: "roadnamebase,roadnametype,functionhierarchy",
         orderField: "objectid",
         coverage: TileSources.nsw.coverage,
-        attribution: "Tracks: © State of New South Wales (Spatial Services, DCS)",
+        attribution: "Tracks: © State of New South Wales (DCS Spatial Services)",
         describe: { a in
             let parts = [a["roadnamebase"] as? String, a["roadnametype"] as? String]
                 .compactMap { $0?.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
