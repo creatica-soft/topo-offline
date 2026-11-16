@@ -77,6 +77,16 @@ enum TileMath {
         return BoundingBox(minLat: lat(key.y + 1), minLon: lon(key.x), maxLat: lat(key.y), maxLon: lon(key.x + 1))
     }
 
+    /// The tile's Web Mercator (EPSG:3857) bounds in metres, "minX,minY,maxX,maxY", for WMS requests.
+    /// `span` × `span` tiles from `key` (its top-left tile) when fetching a block at once.
+    static func mercatorBBox(of key: TileKey, span: Int = 1) -> String {
+        let r = 20_037_508.342789244
+        let size = 2 * r / Double(1 << key.z)
+        let minX = -r + Double(key.x) * size, maxY = r - Double(key.y) * size
+        let extent = size * Double(span)
+        return String(format: "%.2f,%.2f,%.2f,%.2f", minX, maxY - extent, minX + extent, maxY)
+    }
+
     static func ranges(for bbox: BoundingBox, z: Int) -> (x: ClosedRange<Int>, y: ClosedRange<Int>) {
         let x0 = tileX(lon: bbox.minLon, z: z), x1 = tileX(lon: bbox.maxLon, z: z)
         let y0 = tileY(lat: bbox.maxLat, z: z), y1 = tileY(lat: bbox.minLat, z: z)

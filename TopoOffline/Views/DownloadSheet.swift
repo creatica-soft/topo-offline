@@ -16,12 +16,17 @@ struct DownloadSheet: View {
     @State private var maxZoom: Int
     @State private var includeOverview = true
 
+    /// Maps that can be saved for `area`, best match first (empty when none of them may be).
+    static func choices(for area: BoundingBox, current: TileSource) -> [TileSource] {
+        TileSources.available(in: area, preferring: current).filter(\.allowsOffline)
+    }
+
     /// `current` is the map shown on screen; it's used if it covers the area, otherwise the
-    /// sheet picks the state map that does.
+    /// sheet picks the state map that does. Only shown when `choices(for:current:)` isn't empty.
     init(current: TileSource, visibleArea: BoundingBox, nationalWhenZoomedOut: Bool) {
         self.visibleArea = visibleArea
         self.nationalWhenZoomedOut = nationalWhenZoomedOut
-        let choices = TileSources.available(in: visibleArea, preferring: current)
+        let choices = Self.choices(for: visibleArea, current: current)
         self.choices = choices
         let source = choices[0]
         _sourceID = State(initialValue: source.id)
@@ -143,6 +148,37 @@ struct DownloadSheet: View {
                 }
             }
         }
+    }
+}
+
+/// Shown instead of the download form when the map on screen can't be saved for offline use.
+struct OfflineUnavailableView: View {
+    let source: TileSource
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                Image(systemName: "icloud.slash")
+                    .font(.largeTitle)
+                    .foregroundStyle(.secondary)
+                Text("\(source.name) can't be saved for offline use yet.")
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+                Text("It works whenever you're online. Saving it on your phone needs the map provider's permission, which has been asked for.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .navigationTitle("Download area")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Close") { dismiss() } }
+            }
+        }
+        .presentationDetents([.medium])
     }
 }
 

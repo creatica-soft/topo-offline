@@ -166,8 +166,12 @@ struct ContentView: View {
                 if !offlineOnly { Task { await downloads.addMissingNames(offlineOnly: false) } }
             }
             .sheet(isPresented: $showDownload) {
-                DownloadSheet(current: source, visibleArea: controller.visibleArea ?? source.coverage,
-                              nationalWhenZoomedOut: nationalWhenZoomedOut)
+                let area = controller.visibleArea ?? source.coverage
+                if DownloadSheet.choices(for: area, current: source).isEmpty {
+                    OfflineUnavailableView(source: source)
+                } else {
+                    DownloadSheet(current: source, visibleArea: area, nationalWhenZoomedOut: nationalWhenZoomedOut)
+                }
             }
             .sheet(isPresented: $showSearch) {
                 SearchView(center: controller.center, offlineOnly: offlineOnly,

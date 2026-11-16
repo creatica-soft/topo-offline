@@ -52,6 +52,30 @@ enum TileImage {
         return encode(scaled, type: .png)
     }
 
+    /// Cuts an image of `span` × `span` tiles into 256 px tiles, row by row (top row first).
+    /// JPEG when `jpeg` (smaller, for storing), otherwise PNG.
+    static func split(_ data: Data, span: Int, jpeg: Bool = false) -> [[Data]]? {
+        guard let image = decode(data), image.width >= 256 * span, image.height >= 256 * span else { return nil }
+        let w = image.width / span, h = image.height / span
+        var rows: [[Data]] = []
+        for row in 0..<span {
+            var tiles: [Data] = []
+            for col in 0..<span {
+                guard let part = image.cropping(to: CGRect(x: col * w, y: row * h, width: w, height: h)),
+                      let ctx = context(width: 256, height: 256) else { return nil }
+                if jpeg {  // flatten onto white: JPEG has no transparency
+                    ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+                    ctx.fill(CGRect(x: 0, y: 0, width: 256, height: 256))
+                }
+                ctx.draw(part, in: CGRect(x: 0, y: 0, width: 256, height: 256))
+                guard let tile = ctx.makeImage(), let out = encode(tile, type: jpeg ? .jpeg : .png) else { return nil }
+                tiles.append(out)
+            }
+            rows.append(tiles)
+        }
+        return rows
+    }
+
     private static func context(width: Int, height: Int) -> CGContext? {
         CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
                   space: CGColorSpace(name: CGColorSpace.sRGB)!,

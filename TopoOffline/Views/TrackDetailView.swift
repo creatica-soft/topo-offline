@@ -43,7 +43,7 @@ struct TrackDetailView: View {
                               systemImage: "info.circle")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
-                    Text("Elevations are from terrain data (a 30 m grid in Australia, 8 m in New Zealand, 10 m in the US) and smoothed, so totals are approximate.")
+                    Text("Elevations are from terrain data (a 10–30 m grid, depending on the country) and smoothed, so totals are approximate.")
                         .font(.footnote).foregroundStyle(.secondary)
                     Text(Elevation.attribution).font(.caption2).foregroundStyle(.secondary)
                 }
