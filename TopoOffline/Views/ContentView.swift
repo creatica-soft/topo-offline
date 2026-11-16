@@ -23,6 +23,8 @@ struct ContentView: View {
     @AppStorage("sourceID") private var sourceID = TileSources.nsw.id
     @AppStorage("offlineOnly") private var offlineOnly = false
     @AppStorage("nationalWhenZoomedOut") private var nationalWhenZoomedOut = true
+    @AppStorage("units") private var unitSetting = UnitSetting.automatic.rawValue
+    private var units: Units { Units(UnitSetting(rawValue: unitSetting) ?? .automatic) }
     @State private var showDownload = false
     @State private var showRegions = false
     @State private var switchNotice: String?
@@ -213,6 +215,7 @@ struct ContentView: View {
             }
             .onAppear { controller.requestLocationPermission() }
             .modifier(routeFeatures)
+            .environment(\.units, units)
     }
 
     // MARK: - Routes and recording
@@ -456,10 +459,20 @@ struct ContentView: View {
                     }
                 }
                 Divider()
-                Toggle(isOn: $nationalWhenZoomedOut) {
-                    Text("National map when zoomed out")
-                    Text("State topo appears from about 10 km across")
+                if source.usesNationalOverview {
+                    Toggle(isOn: $nationalWhenZoomedOut) {
+                        Text("National map when zoomed out")
+                        Text("State topo appears from about \(units.roundDistance(10_000)) across")
+                    }
                 }
+                Picker(selection: $unitSetting) {
+                    Text("Automatic (\(Units(.automatic).imperial ? "miles, feet" : "km, metres"))").tag(UnitSetting.automatic.rawValue)
+                    Text("Metric (km, metres)").tag(UnitSetting.metric.rawValue)
+                    Text("Imperial (miles, feet)").tag(UnitSetting.imperial.rawValue)
+                } label: {
+                    Label("Units", systemImage: "ruler")
+                }
+                .pickerStyle(.menu)
             } label: {
                 Label(source.name, systemImage: "map")
                     .font(.subheadline.weight(.semibold))
@@ -511,8 +524,8 @@ struct ContentView: View {
                 cardView
             }
             HStack {
-                ScaleBar(mapView: mapView)
-                    .frame(width: 170, height: 26, alignment: .leading)
+                ScaleBar(metersPerPoint: controller.metersPerPoint)
+                    .frame(width: 170, height: 26, alignment: .bottomLeading)
                     .allowsHitTesting(false)
                 Spacer()
                 if recordingEnabled, !recorder.isRecording, planner == nil {

@@ -7,6 +7,7 @@ struct TrackCard: View {
     var onOpen: () -> Void = {}
     let onZoom: () -> Void
     let onClose: () -> Void
+    @Environment(\.units) private var units
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -25,10 +26,10 @@ struct TrackCard: View {
                         .foregroundStyle(.secondary)
                     switch profile {
                     case .ready(let p):
-                        Text("\(length) · ↑ \(Int(p.ascent)) m ↓ \(Int(p.descent)) m")
+                        Text("\(length) · \(units.climb(up: p.ascent, down: p.descent))")
                             .font(.subheadline.weight(.medium)).monospacedDigit()
                         if p.lengthKm < track.lengthKm * 0.9 {
-                            Text("Climb for \(String(format: "%.0f", p.lengthKm)) of \(String(format: "%.0f", track.lengthKm)) km")
+                            Text("Climb for \(units.roundDistance(p.lengthKm * 1000)) of \(units.roundDistance(track.lengthKm * 1000))")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Label("Tap for elevation profile", systemImage: "chevron.up")
@@ -79,9 +80,5 @@ struct TrackCard: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
     }
 
-    private var length: String {
-        track.lengthKm < 1
-            ? "\(Int((track.lengthKm * 1000 / 10).rounded()) * 10) m"
-            : String(format: "%.1f km", track.lengthKm)
-    }
+    private var length: String { units.distance(track.lengthKm * 1000) }
 }

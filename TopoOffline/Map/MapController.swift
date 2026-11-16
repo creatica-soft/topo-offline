@@ -8,6 +8,8 @@ import Observation
 final class MapController {
     private(set) var visibleArea: BoundingBox?
     private(set) var zoomLevel: Double = 0
+    /// Ground distance per screen point at the centre of the map (for the scale bar).
+    private(set) var metersPerPoint: Double = 0
     /// Becomes true once the MKMapView exists, so the scale bar and compass can attach to it.
     private(set) var isMapReady = false
 
@@ -60,5 +62,15 @@ final class MapController {
                                   maxLon: r.center.longitude + r.span.longitudeDelta / 2)
         let width = max(Double(map.bounds.width), 1)
         zoomLevel = log2(360 * width / 256 / max(r.span.longitudeDelta, 1e-9))
+        mapIsMoving(map)
+    }
+
+    /// Called continuously while the map moves (pinch zooms included), so the scale bar keeps up.
+    func mapIsMoving(_ map: MKMapView) {
+        let width = Double(map.bounds.width)
+        guard width > 0 else { return }
+        let m = MKMetersPerMapPointAtLatitude(map.centerCoordinate.latitude) * map.visibleMapRect.size.width / width
+        // Small changes don't move the bar visibly; skipping them saves redraws while panning.
+        if abs(m - metersPerPoint) > metersPerPoint * 0.005 { metersPerPoint = m }
     }
 }

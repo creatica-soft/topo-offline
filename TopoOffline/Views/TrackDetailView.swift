@@ -17,8 +17,10 @@ struct TrackDetailView: View {
     let onScrub: (CLLocationCoordinate2D?) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.units) private var units
     @State private var reversed = false
-    @State private var selectedKm: Double?
+    /// The chart position being touched, in km or miles.
+    @State private var selected: Double?
 
     private var shown: Elevation.Profile { reversed ? profile.reversed() : profile }
 
@@ -26,13 +28,13 @@ struct TrackDetailView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("\(track.kind) · \(String(format: "%.1f", shown.lengthKm)) km")
+                    Text("\(track.kind) · \(units.distance(shown.lengthKm * 1000))")
                         .foregroundStyle(.secondary)
                     readout
                     chart
                     stats
                     if !shown.coversWholeTrack {
-                        Label("The profile covers \(String(format: "%.0f", shown.lengthKm)) of \(String(format: "%.0f", track.lengthKm)) km: side tracks and far-off sections aren't included.",
+                        Label("The profile covers \(units.roundDistance(shown.lengthKm * 1000)) of \(units.roundDistance(track.lengthKm * 1000)): side tracks and far-off sections aren't included.",
                               systemImage: "info.circle")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
@@ -53,7 +55,7 @@ struct TrackDetailView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
                         reversed.toggle()
-                        selectedKm = nil
+                        selected = nil
                     } label: {
                         Label("Reverse", systemImage: "arrow.left.arrow.right")
                     }
@@ -65,52 +67,53 @@ struct TrackDetailView: View {
         }
         .presentationDetents([.medium, .large])
         .presentationBackgroundInteraction(.enabled(upThrough: .medium))
-        .onChange(of: selectedKm) {
-            onScrub(selectedKm.flatMap { shown.point(atDistance: $0 * 1000) })
+        .onChange(of: selected) {
+            onScrub(selected.flatMap { shown.point(atDistance: units.meters(fromDistanceValue: $0)) })
         }
         .onDisappear { onScrub(nil) }
     }
 
+    /// Chart height range, in metres or feet.
     private var yDomain: ClosedRange<Double> {
         let pad = max(20, (shown.highest - shown.lowest) * 0.1)
-        return (shown.lowest - pad)...(shown.highest + pad)
+        return units.heightValue(shown.lowest - pad)...units.heightValue(shown.highest + pad)
     }
 
     private var chart: some View {
         Chart {
             ForEach(shown.distances.indices, id: \.self) { i in
-                AreaMark(x: .value("Distance", shown.distances[i] / 1000),
+                AreaMark(x: .value("Distance", units.distanceValue(shown.distances[i])),
                          yStart: .value("Base", yDomain.lowerBound),
-                         yEnd: .value("Elevation", shown.elevations[i]))
+                         yEnd: .value("Elevation", units.heightValue(shown.elevations[i])))
                     .foregroundStyle(.linearGradient(colors: [.purple.opacity(0.35), .purple.opacity(0.05)],
                                                      startPoint: .top, endPoint: .bottom))
-                LineMark(x: .value("Distance", shown.distances[i] / 1000),
-                         y: .value("Elevation", shown.elevations[i]))
+                LineMark(x: .value("Distance", units.distanceValue(shown.distances[i])),
+                         y: .value("Elevation", units.heightValue(shown.elevations[i])))
                     .foregroundStyle(.purple)
             }
-            if let km = selectedKm, let e = elevation(atKm: km) {
-                RuleMark(x: .value("Selected", km))
+            if let x = selected, let e = elevation(at: x) {
+                RuleMark(x: .value("Selected", x))
                     .foregroundStyle(Color.gray.opacity(0.6))
                     .lineStyle(StrokeStyle(lineWidth: 1))
-                PointMark(x: .value("Selected", km), y: .value("Elevation", e))
+                PointMark(x: .value("Selected", x), y: .value("Elevation", units.heightValue(e)))
                     .foregroundStyle(.purple)
                     .symbolSize(80)
             }
         }
         .chartYScale(domain: yDomain)
-        .chartXAxisLabel("km")
-        .chartYAxisLabel("m")
-        .chartXSelection(value: $selectedKm)
+        .chartXAxisLabel(units.distanceUnit)
+        .chartYAxisLabel(units.heightUnit)
+        .chartXSelection(value: $selected)
         .frame(height: 220)
-        .accessibilityLabel("Elevation profile, \(Int(shown.lowest)) to \(Int(shown.highest)) metres")
+        .accessibilityLabel("Elevation profile, \(Int(units.heightValue(shown.lowest))) to \(Int(units.heightValue(shown.highest))) \(units.heightUnitName)")
     }
 
     /// Reading while dragging along the chart; a hint otherwise. Fixed height so nothing jumps.
     private var readout: some View {
         HStack(spacing: 6) {
-            if let km = selectedKm, let e = elevation(atKm: km) {
+            if let x = selected, let e = elevation(at: x) {
                 Image(systemName: "mappin.circle.fill").foregroundStyle(.purple)
-                Text("\(String(format: "%.1f", km)) km · \(Int(e)) m")
+                Text("\(String(format: "%.1f", x)) \(units.distanceUnit) · \(units.height(e))")
                     .font(.title3.weight(.semibold))
                     .monospacedDigit()
             } else {
@@ -127,12 +130,12 @@ struct TrackDetailView: View {
     private var stats: some View {
         Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 8) {
             GridRow {
-                stat("Climb", "↑ \(Int(shown.ascent)) m")
-                stat("Descent", "↓ \(Int(shown.descent)) m")
+                stat("Climb", "↑ \(units.height(shown.ascent))")
+                stat("Descent", "↓ \(units.height(shown.descent))")
             }
             GridRow {
-                stat("Highest", "\(Int(shown.highest)) m")
-                stat("Lowest", "\(Int(shown.lowest)) m")
+                stat("Highest", units.height(shown.highest))
+                stat("Lowest", units.height(shown.lowest))
             }
         }
     }
@@ -144,8 +147,9 @@ struct TrackDetailView: View {
         }
     }
 
-    private func elevation(atKm km: Double) -> Double? {
-        let d = km * 1000
+    /// Elevation in metres at a chart position (km or miles).
+    private func elevation(at x: Double) -> Double? {
+        let d = units.meters(fromDistanceValue: x)
         guard let i = shown.distances.firstIndex(where: { $0 >= d }) else { return shown.elevations.last }
         return shown.elevations[i]
     }

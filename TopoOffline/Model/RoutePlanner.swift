@@ -17,8 +17,8 @@ final class RoutePlanner {
     private(set) var legs: [SavedRoute.Leg] = []
     /// Routing in progress (legs can take a moment while track data loads).
     private(set) var isBusy = false
-    /// Set when a leg was too long to route along tracks and was drawn straight.
-    private(set) var notice: String?
+    /// Set when the last leg was too long to route along tracks and was drawn straight.
+    private(set) var legTooLong = false
     /// Changes on every edit (for redrawing and recomputing the elevation profile).
     private(set) var version = 0
     /// The point selected on the map, if any.
@@ -255,11 +255,7 @@ final class RoutePlanner {
     /// straight bit (so a neighbouring leg isn't left with a gap).
     private func routeLeg(_ i: Int, follow: Bool, tolerance: Double, snap: Set<Int>) async -> SavedRoute.Leg {
         let a = waypoints[i], b = waypoints[i + 1]
-        if follow, TrackPath.meters(a, b) > TrackRouter.maxDistance {
-            notice = "Points over 20 km apart are joined in a straight line. Add points in between to follow tracks."
-        } else {
-            notice = nil
-        }
+        legTooLong = follow && TrackPath.meters(a, b) > TrackRouter.maxDistance
         let leg = await TrackRouter.leg(from: a, to: b, followTracks: follow, snap: min(tolerance, 150),
                                         library: library, offlineOnly: offlineOnly)
         if leg.followsTracks, let first = leg.points.first, let last = leg.points.last {
