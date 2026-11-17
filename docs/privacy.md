@@ -49,7 +49,7 @@ a service receives the technical information needed to answer a request: your de
 address and which map area or place name was requested. When you search for a place,
 the text you type is sent to the place-name service of the country the map is showing:
 Geoscience Australia, the U.S. Geological Survey, Natural Resources Canada, swisstopo or
-Kartverket. New Zealand place names are searched on your phone. The app sends nothing else, and no identifier that links requests to you. How each service handles its own server logs is set out in its own privacy
+Kartverket. New Zealand place names are searched on your phone. Each request also names the app and its website, the same for every user. The app sends nothing else, and no identifier that links requests to you. How each service handles its own server logs is set out in its own privacy
 policy.
 
 You can switch the app to **Offline** mode, and it will make no requests at all and use only maps

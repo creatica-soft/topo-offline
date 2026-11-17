@@ -221,8 +221,9 @@ enum TileSources {
 
     /// Switzerland: swisstopo's national map. Zoom 18 exists (the 1:10,000 map) but 17 (1:25,000
     /// style) is plenty for walking and a quarter of the tiles.
-    /// Offline saving waits on swisstopo: their terms point offline use to their download service,
-    /// and permission has been asked for.
+    /// Offline saving within the terms' fair-use limits was agreed by the geo.admin.ch helpdesk
+    /// (Nov 2026). They asked for a Referer header (see `TileNetwork.headers`). The cap below keeps
+    /// downloads moderate; the terms give no number.
     static let ch = TileSource(
         id: "ch-topo",
         name: "swisstopo",
@@ -236,7 +237,7 @@ enum TileSources {
         averageTileBytes: 25_000, storeAsJPEG: false,
         outlines: [CountryOutlines.switzerland],
         usesNationalOverview: false,
-        allowsOffline: false)
+        maxTilesPerMinute: 600)
 
     /// Norway: Kartverket's topographic map (CC BY 4.0).
     /// Offline saving waits on Kartverket: at zoom 12+ the map includes Geovekst data whose copying

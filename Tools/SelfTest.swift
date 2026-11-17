@@ -653,10 +653,10 @@ do {
         check(t.state == "CA" && (p?.ascent ?? 0) > 200, "Parks Canada trail: Lake Agnes, \(t.kind), climb \(Int(p?.ascent ?? 0)) m")
     } else { check(false, "Lake Agnes in Parks Canada trails (found \(lakeAgnes.map(\.displayName)))") }
 
-    // Downloads: Canada allowed, Switzerland and Norway not (yet)
-    check(DownloadManager.plan(name: "x", area: chBox, source: TileSources.ch, zooms: 14...15, includeOverview: true) == nil
+    // Downloads: Canada and Switzerland allowed, Norway not (yet)
+    check(DownloadManager.plan(name: "x", area: chBox, source: TileSources.ch, zooms: 14...15, includeOverview: true) != nil
           && DownloadManager.plan(name: "x", area: noBox, source: TileSources.no, zooms: 14...15, includeOverview: true) == nil,
-          "Swiss and Norwegian maps can't be saved offline yet")
+          "Swiss maps can be saved offline, Norwegian not yet")
     let lakeLouise = BoundingBox(minLat: 51.410, minLon: -116.225, maxLat: 51.420, maxLon: -116.205)
     let rc = await runDownload("Lake Louise", lakeLouise, TileSources.ca, 13...15)
     let caTile = TileKey(z: 15, x: TileMath.tileX(lon: lakeLouise.center.longitude, z: 15), y: TileMath.tileY(lat: lakeLouise.center.latitude, z: 15))

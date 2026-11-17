@@ -22,8 +22,8 @@ the topo map, place names, walking tracks and elevation data for that area. Out 
 **Which areas have detailed topo maps?**
 New South Wales, Queensland, Tasmania, New Zealand, the United States, Canada, Switzerland and
 Norway. Elsewhere in Australia the app shows Geoscience Australia's 1:250,000 national map, and in
-Victoria it draws walking tracks over it. The Swiss and Norwegian maps work online only for now,
-until their providers allow saving them on the phone.
+Victoria it draws walking tracks over it. The Norwegian map works online only for now,
+until Kartverket allows saving it on the phone.
 
 **How do I choose the map or switch to miles and feet?**
 Tap the gear at the top left of the map. Settings has the maps by country, units, walk recording,
