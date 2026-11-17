@@ -47,6 +47,12 @@ The app never tracks you or sends your location anywhere; see the [privacy polic
 Walk recording is off unless you turn it on in Settings, and recorded walks stay on your iPhone.
 Recording keeps GPS on while the phone is locked, so it uses more battery.
 
+**Will Follow warn me with the phone locked?**
+Yes. While you follow a route, GPS stays on with the phone locked, and if you go more than 100 m
+from the route you get a notification with sound saying how far away the route is and in which
+direction. Allow notifications when the app asks (or later in Settings › Topo Offline ›
+Notifications). Following keeps GPS on like recording does, so tap Stop following when you're done.
+
 ## Safety
 
 Maps and data can be out of date or wrong. Always carry a paper map and compass and a way to call

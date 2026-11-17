@@ -244,11 +244,6 @@ struct TopoMapView: UIViewRepresentable {
             map.addAnnotations(waypointAnnotations)
         }
 
-        func mapView(_ mapView: MKMapView, didUpdate userLocation: MKUserLocation) {
-            guard let location = userLocation.location else { return }
-            MainActor.assumeIsolated { controller.onUserLocation?(location) }
-        }
-
         @objc func dragWaypoint(_ g: WaypointPan) {
             guard let map = g.view as? MKMapView else { return }
             guard let a = g.point else {

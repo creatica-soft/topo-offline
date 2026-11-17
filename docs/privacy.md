@@ -5,7 +5,7 @@ permalink: /privacy/
 
 # Topo Offline privacy policy
 
-*Effective 16 November 2026*
+*Effective 17 November 2026*
 
 **Short version:** Topo Offline doesn't collect any information about you. There's no account,
 no advertising, no analytics and no tracking, and the app has no server of its own. Your location
@@ -26,9 +26,11 @@ show your progress along a route you're following. Your location is used only on
 is never sent anywhere by the app. You can turn location access off at any time in Settings ›
 Privacy & Security › Location Services.
 
-Walk recording is off unless you turn it on. While you're recording a walk, the app keeps using
-your location when the phone is locked or another app is open, and iOS shows a location indicator
-while it does. Recording stops when you tap Stop. Recorded walks are saved only on your phone.
+Walk recording is off unless you turn it on. While you're recording a walk or following a route,
+the app keeps using your location when the phone is locked or another app is open, and iOS shows a
+location indicator while it does. This stops when you tap Stop or Stop following. Recorded walks
+are saved only on your phone. The warning when you stray from a route you're following is a
+notification created on your phone, without sending anything over the internet.
 
 ## Map and data requests
 

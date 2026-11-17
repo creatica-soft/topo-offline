@@ -10,6 +10,7 @@ struct RouteFeatures: ViewModifier {
     let planner: RoutePlanner?
     @Binding var plannerProfile: Elevation.Profile?
     let recorder: WalkRecorder
+    let follower: RouteFollower
     let scenePhase: ScenePhase
     let offlineOnly: Bool
     let library: OfflineTileLibrary
@@ -47,13 +48,14 @@ struct RouteFeatures: ViewModifier {
                 Text("“\(walk.name)” was still recording when Topo Offline closed. Points weren't recorded while it was closed.")
             }
             .alert("Location access is off",
-                   isPresented: Binding(get: { recorder.permissionProblem }, set: { recorder.permissionProblem = $0 })) {
+                   isPresented: Binding(get: { recorder.permissionProblem || follower.permissionProblem },
+                                        set: { recorder.permissionProblem = $0; follower.permissionProblem = $0 })) {
                 Button("Open Settings") {
                     if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("Recording a walk needs location access. Allow it in Settings › Topo Offline › Location (While Using the App).")
+                Text("Recording a walk or following a route needs location access. Allow it in Settings › Topo Offline › Location (While Using the App).")
             }
             .alert(importMessage ?? "",
                    isPresented: Binding(get: { importMessage != nil }, set: { if !$0 { importMessage = nil } })) {

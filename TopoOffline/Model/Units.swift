@@ -65,6 +65,15 @@ struct Units: Equatable, Sendable {
     /// Metres as metres or feet (chart y values).
     func heightValue(_ meters: Double) -> Double { imperial ? meters / Self.metersPerFoot : meters }
 
+    /// "4.2 km/h" / "2.6 mph"
+    func speed(_ metersPerSecond: Double) -> String {
+        String(format: "%.1f %@", speedValue(metersPerSecond), speedUnit)
+    }
+    var speedUnit: String { imperial ? "mph" : "km/h" }
+    func speedValue(_ metersPerSecond: Double) -> Double {
+        imperial ? metersPerSecond * 3600 / Self.metersPerMile : metersPerSecond * 3.6
+    }
+
     // MARK: - Scale bar
 
     /// The longest round length (1, 2 or 5 × 10ⁿ of the unit) that fits in `maxPoints` on screen.

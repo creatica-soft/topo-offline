@@ -13,9 +13,7 @@ struct ContentView: View {
     @State private var planner: RoutePlanner?
     @State private var plannerProfile: Elevation.Profile?
     @State private var namingRoute = false
-    @State private var following: SavedRoute?
-    @State private var followPath: [CLLocationCoordinate2D] = []
-    @State private var progress: RouteProgress?
+    @State private var follower = RouteFollower()
     @State private var leftoverWalk: SavedRoute?
     @State private var importMessage: String?
 
@@ -124,8 +122,9 @@ struct ContentView: View {
                     if let pin {
                         pinChip(pin)
                     }
-                    if let following {
-                        FollowChip(route: following, progress: progress, onStop: stopFollowing)
+                    if let route = follower.route {
+                        FollowChip(route: route, progress: follower.progress, isOffRoute: follower.isOffRoute,
+                                   onStop: { follower.stop() })
                     }
                     if nzNeedsKey {
                         Text(offlineOnly
@@ -197,7 +196,8 @@ struct ContentView: View {
                     }
                 case .route(let route):
                     if case .ready(let profile) = trackProfile {
-                        TrackDetailView(track: route.asTrack, profile: profile, onScrub: { profileMarker = $0 })
+                        TrackDetailView(track: route.asTrack, profile: profile, speed: WalkSpeed(path: route.path, times: route.times),
+                                        onScrub: { profileMarker = $0 })
                     }
                 default: EmptyView()
                 }
@@ -251,7 +251,7 @@ struct ContentView: View {
     private var routeFeatures: RouteFeatures {
         RouteFeatures(showRoutes: $showRoutes, namingRoute: $namingRoute, leftoverWalk: $leftoverWalk,
                       importMessage: $importMessage, planner: planner, plannerProfile: $plannerProfile,
-                      recorder: recorder, scenePhase: scenePhase, offlineOnly: offlineOnly, library: store.library,
+                      recorder: recorder, follower: follower, scenePhase: scenePhase, offlineOnly: offlineOnly, library: store.library,
                       onSelect: { showRoute($0) }, onNewRoute: { startPlanning(nil) }, onEdit: { startPlanning($0) },
                       onSaveRoute: saveRoute, onContinueWalk: { walk in
                           recorder.resume(walk, detail: WalkRecorder.Detail(rawValue: recordingDetail) ?? .standard)
@@ -344,33 +344,6 @@ struct ContentView: View {
         } else {
             importMessage = "No routes or tracks found in that file."
         }
-    }
-
-    private func startFollowing(_ route: SavedRoute) {
-        controller.requestLocationPermission()
-        following = route
-        followPath = route.path
-        progress = nil
-        let update: (CLLocationCoordinate2D) -> Void = { c in updateProgress(c) }
-        controller.onUserLocation = { update($0.coordinate) }
-        recorder.onFix = update
-        if let here = controller.userLocation { update(here.coordinate) }
-    }
-
-    private func stopFollowing() {
-        following = nil
-        followPath = []
-        progress = nil
-        controller.onUserLocation = nil
-        recorder.onFix = nil
-    }
-
-    private func updateProgress(_ c: CLLocationCoordinate2D) {
-        guard following != nil, let p = RouteProgress.locate(c, on: followPath, previous: progress?.done) else { return }
-        if p.isOffRoute, progress?.isOffRoute != true {
-            UINotificationFeedbackGenerator().notificationOccurred(.warning)
-        }
-        progress = p
     }
 
     /// When the map moves out of the selected state's map into another state, switch to that
@@ -578,11 +551,11 @@ struct ContentView: View {
     private var cardView: some View {
             switch card {
             case .route(let route):
-                RouteCard(route: route, profile: trackProfile, isFollowing: following?.id == route.id,
+                RouteCard(route: route, profile: trackProfile, isFollowing: follower.route?.id == route.id,
                           onOpen: { if case .ready = trackProfile { details = .route(route) } },
                           onZoom: { controller.show(route.bbox) },
                           onClose: { card = nil },
-                          onFollow: { following?.id == route.id ? stopFollowing() : startFollowing(route) },
+                          onFollow: { follower.route?.id == route.id ? follower.stop() : follower.start(route) },
                           onEdit: { startPlanning(route) })
             case .track(let track):
                 TrackCard(track: track, profile: trackProfile,
