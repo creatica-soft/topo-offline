@@ -184,12 +184,13 @@ struct RouteCard: View {
 struct FollowChip: View {
     let route: SavedRoute
     let progress: RouteProgress?
+    let isOffRoute: Bool
     let onStop: () -> Void
     @Environment(\.units) private var units
 
     var body: some View {
         HStack(spacing: 0) {
-            Label(text, systemImage: progress?.isOffRoute == true ? "exclamationmark.triangle.fill" : "location.north.line.fill")
+            Label(text, systemImage: isOffRoute ? "exclamationmark.triangle.fill" : "location.north.line.fill")
                 .font(.subheadline.weight(.medium))
                 .monospacedDigit()
                 .lineLimit(2)
@@ -204,14 +205,14 @@ struct FollowChip: View {
             }
             .accessibilityLabel("Stop following")
         }
-        .background(progress?.isOffRoute == true ? AnyShapeStyle(Color.orange.opacity(0.9)) : AnyShapeStyle(.regularMaterial),
+        .background(isOffRoute ? AnyShapeStyle(Color.orange.opacity(0.9)) : AnyShapeStyle(.regularMaterial),
                     in: Capsule())
         .padding(.horizontal)
     }
 
     private var text: String {
         guard let p = progress else { return "Following \(route.name): waiting for your location…" }
-        if p.isOffRoute { return "Off route by \(units.distance(p.offBy))" }
+        if isOffRoute { return "Off route by \(units.distance(p.offBy)) · route to the \(p.directionToRouteShort)" }
         return "\(units.distance(p.done)) done · \(units.distance(p.remaining)) to go"
     }
 }

@@ -37,8 +37,8 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         LINZAPIKey: $(LINZ_API_KEY)
         LINZKeyIsDeveloper: $(LINZ_KEY_IS_DEVELOPER)
-        NSLocationWhenInUseUsageDescription: "Your location is shown on the map so you can see where you are, even without phone signal. If you turn on walk recording, it's also recorded while the phone is locked. It never leaves your iPhone."
-        # Recording a walk (off unless the user turns it on) continues with the screen locked.
+        NSLocationWhenInUseUsageDescription: "Your location is shown on the map so you can see where you are, even without phone signal. While you record a walk or follow a route, it's also used when the phone is locked. It never leaves your iPhone."
+        # Recording a walk (off unless the user turns it on) and following a route continue with the screen locked.
         UIBackgroundModes:
           - location
         # Open .gpx files from Files, Mail, AirDrop and other apps.

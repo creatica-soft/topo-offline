@@ -13,6 +13,8 @@ enum ProfileState: Equatable {
 struct TrackDetailView: View {
     let track: Track
     let profile: Elevation.Profile
+    /// Recorded walks (and GPX tracks with times): speed along it, and moving and stopped time.
+    var speed: WalkSpeed? = nil
     /// Called with the position on the track while dragging along the chart (nil when released).
     let onScrub: (CLLocationCoordinate2D?) -> Void
 
@@ -23,6 +25,9 @@ struct TrackDetailView: View {
     @State private var selected: Double?
 
     private var shown: Elevation.Profile { reversed ? profile.reversed() : profile }
+    private var shownSpeed: WalkSpeed? { reversed ? speed?.reversed() : speed }
+    /// Both charts share the x axis, so dragging one lines up with the other.
+    private var xDomain: ClosedRange<Double> { 0...max(0.01, units.distanceValue(shown.lengthKm * 1000)) }
 
     var body: some View {
         NavigationStack {
@@ -32,6 +37,7 @@ struct TrackDetailView: View {
                         .foregroundStyle(.secondary)
                     readout
                     chart
+                    if let shownSpeed { speedChart(shownSpeed) }
                     stats
                     if !shown.coversWholeTrack {
                         Label("The profile covers \(units.roundDistance(shown.lengthKm * 1000)) of \(units.roundDistance(track.lengthKm * 1000)): side tracks and far-off sections aren't included.",
@@ -41,6 +47,10 @@ struct TrackDetailView: View {
                     if shown.bridgedGaps {
                         Label("Where the published track has gaps (often where it follows a road), the profile joins them in a straight line.",
                               systemImage: "info.circle")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                    if speed != nil {
+                        Text("Speed is worked out from the GPS times, averaged over about \(units.distance(2 * WalkSpeed.window)). Time spent within \(units.distance(WalkSpeed.stopRadius)) of one spot for \(Int(WalkSpeed.minStop / 60)) minutes or more counts as stopped, and the average speed leaves stops out.")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                     Text("Elevations are from terrain data (a 10–30 m grid, depending on the country) and smoothed, so totals are approximate.")
@@ -101,6 +111,7 @@ struct TrackDetailView: View {
             }
         }
         .chartYScale(domain: yDomain)
+        .chartXScale(domain: xDomain)
         .chartXAxisLabel(units.distanceUnit)
         .chartYAxisLabel(units.heightUnit)
         .chartXSelection(value: $selected)
@@ -113,7 +124,8 @@ struct TrackDetailView: View {
         HStack(spacing: 6) {
             if let x = selected, let e = elevation(at: x) {
                 Image(systemName: "mappin.circle.fill").foregroundStyle(.purple)
-                Text("\(String(format: "%.1f", x)) \(units.distanceUnit) · \(units.height(e))")
+                Text("\(String(format: "%.1f", x)) \(units.distanceUnit) · \(units.height(e))"
+                     + (shownSpeed?.speed(atDistance: units.meters(fromDistanceValue: x)).map { " · \(units.speed($0))" } ?? ""))
                     .font(.title3.weight(.semibold))
                     .monospacedDigit()
             } else {
@@ -137,6 +149,45 @@ struct TrackDetailView: View {
                 stat("Highest", units.height(shown.highest))
                 stat("Lowest", units.height(shown.lowest))
             }
+            if let shownSpeed { speedStats(shownSpeed) }
+        }
+    }
+
+    private func speedChart(_ s: WalkSpeed) -> some View {
+        Chart {
+            ForEach(s.distances.indices, id: \.self) { i in
+                LineMark(x: .value("Distance", units.distanceValue(s.distances[i])),
+                         y: .value("Speed", units.speedValue(s.speeds[i])))
+                    .foregroundStyle(.teal)
+                    .interpolationMethod(.monotone)
+            }
+            if let x = selected, let v = s.speed(atDistance: units.meters(fromDistanceValue: x)) {
+                RuleMark(x: .value("Selected", x))
+                    .foregroundStyle(Color.gray.opacity(0.6))
+                    .lineStyle(StrokeStyle(lineWidth: 1))
+                PointMark(x: .value("Selected", x), y: .value("Speed", units.speedValue(v)))
+                    .foregroundStyle(.teal)
+                    .symbolSize(80)
+            }
+        }
+        .chartXScale(domain: xDomain)
+        .chartYScale(domain: 0...max(1, units.speedValue(s.speeds.max() ?? 1) * 1.15))
+        .chartXAxisLabel(units.distanceUnit)
+        .chartYAxisLabel(units.speedUnit)
+        .chartXSelection(value: $selected)
+        .frame(height: 140)
+        .accessibilityLabel("Speed along the walk, averaging \(units.speed(s.averageMoving)) while moving")
+    }
+
+    @ViewBuilder
+    private func speedStats(_ s: WalkSpeed) -> some View {
+        GridRow {
+            stat("Moving time", RouteFormat.duration(s.movingTime))
+            stat("Stopped", RouteFormat.duration(s.stoppedTime))
+        }
+        GridRow {
+            stat("Average speed", units.speed(s.averageMoving))
+            stat("Total time", RouteFormat.duration(s.totalTime))
         }
     }
 

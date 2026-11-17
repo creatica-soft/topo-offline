@@ -439,6 +439,34 @@ do {
     let outBack = [off(0, 0), off(1000, 0), off(0, 0)]
     check(RouteProgress.locate(off(200, 0), on: outBack, previous: 1700).map { abs($0.done - 1800) < 2 } == true,
           "progress: out-and-back keeps to the return leg")
+    // Route runs east along y = 0, then north at x = 1000: a walker south of it is told "north".
+    let south = RouteProgress.locate(off(500, -150), on: route)
+    check(south?.directionToRoute == "north" && south?.directionToRouteShort == "N", "progress: route is to the north (\(south?.directionToRoute ?? "-"))")
+    let west = RouteProgress.locate(off(1150, 600), on: route)
+    check(west?.directionToRoute == "west", "progress: route is to the west (\(west?.directionToRoute ?? "-"))")
+    check(RouteProgress.compassName(44) == "north-east" && RouteProgress.compassName(350) == "north"
+          && RouteProgress.compassName(-90) == "west", "compass names")
+
+    // Speed: 1 km at 4 km/h (15 m points), a 10-minute stop with GPS drift, then 1 km at 3 km/h.
+    do {
+        var pts: [CLLocationCoordinate2D] = [], ts: [Double] = []
+        var t = 0.0
+        for i in 0...66 { pts.append(off(Double(i) * 15, 0)); ts.append(t); t += 15 / (4 / 3.6) }
+        t -= 15 / (4 / 3.6)
+        let stopAt = Double(66 * 15)
+        for k in 1...5 { pts.append(off(stopAt + (k % 2 == 0 ? 6 : -6), 4)); t += 120; ts.append(t) }
+        for i in 1...66 { t += 15 / (3 / 3.6); pts.append(off(stopAt + Double(i) * 15, 0)); ts.append(t) }
+        if let s = WalkSpeed(path: pts, times: ts) {
+            let km = s.movingDistance / 1000, avg = s.averageMoving * 3.6
+            check(abs(s.stoppedTime - 600) < 90 && abs(km - 1.98) < 0.06 && avg > 3.2 && avg < 3.6,
+                  "speed: stop found (\(Int(s.stoppedTime)) s stopped, \(Int(s.movingTime)) s moving, \(String(format: "%.2f", avg)) km/h)")
+            let early = s.speed(atDistance: 400).map { $0 * 3.6 } ?? 0, late = s.speed(atDistance: 1600).map { $0 * 3.6 } ?? 0
+            check(abs(early - 4) < 0.2 && abs(late - 3) < 0.2, "speed chart: 4 then 3 km/h (\(String(format: "%.1f / %.1f", early, late)))")
+            let r = s.reversed()
+            check(abs((r.speed(atDistance: 400).map { $0 * 3.6 } ?? 0) - 3) < 0.2 && r.length == s.length, "speed chart reversed")
+        } else { check(false, "speed computed for a timed walk") }
+        check(WalkSpeed(path: route, times: []) == nil, "no speed without times")
+    }
 
     // GPS fixes: a bad-accuracy fix and a 1 km jump are dropped
     let f0 = GPSFix(coordinate: off(0, 0), time: 0, horizontalAccuracy: 8, altitude: 900)

@@ -68,9 +68,6 @@ final class WalkRecorder: NSObject {
     var isRecording: Bool { current != nil }
     var startDate: Date? { current?.times.first.map { Date(timeIntervalSince1970: $0) } ?? current?.created }
 
-    /// Called with each recorded position (to update progress along a followed route).
-    @ObservationIgnored var onFix: ((CLLocationCoordinate2D) -> Void)?
-
     @ObservationIgnored private let manager = CLLocationManager()
     @ObservationIgnored private let store: RouteStore
     @ObservationIgnored private var detail = Detail.standard
@@ -190,7 +187,6 @@ final class WalkRecorder: NSObject {
         points.append(fix.coordinate)
         climb = RecordingFilter.climb(walk.altitudes)
         version += 1
-        onFix?(fix.coordinate)
         if Date().timeIntervalSince(lastSave) > 60 { saveNow() }
     }
 }
