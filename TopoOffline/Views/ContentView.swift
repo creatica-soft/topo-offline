@@ -476,6 +476,8 @@ struct ContentView: View {
                 } label: {
                     Label(offlineOnly ? "Offline" : "Online", systemImage: offlineOnly ? "wifi.slash" : "wifi")
                         .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                        .fixedSize()
                         .padding(.horizontal, 14).padding(.vertical, 9)
                         .background(offlineOnly ? AnyShapeStyle(Color.orange.opacity(0.9)) : AnyShapeStyle(.regularMaterial),
                                     in: Capsule())
@@ -513,6 +515,8 @@ struct ContentView: View {
                     Button(action: startRecording) {
                         Label("Record", systemImage: "record.circle")
                             .font(.subheadline.weight(.semibold))
+                            .lineLimit(1)
+                            .fixedSize()
                             .padding(.horizontal, 14).padding(.vertical, 9)
                             .background(.regularMaterial, in: Capsule())
                             .foregroundStyle(.red)
@@ -525,11 +529,17 @@ struct ContentView: View {
                 Button {
                     showDownload = true
                 } label: {
-                    Label("Download", systemImage: "arrow.down.circle.fill")
-                        .font(.body.weight(.semibold))
-                        .padding(.horizontal, 18).padding(.vertical, 12)
-                        .background(.tint, in: Capsule())
-                        .foregroundStyle(.white)
+                    // One line; with very large text, just the icon (the round buttons keep their room).
+                    ViewThatFits(in: .horizontal) {
+                        Label("Download", systemImage: "arrow.down.circle.fill")
+                            .lineLimit(1)
+                            .fixedSize()
+                        Image(systemName: "arrow.down.circle.fill")
+                    }
+                    .font(.body.weight(.semibold))
+                    .padding(.horizontal, 18).padding(.vertical, 12)
+                    .background(.tint, in: Capsule())
+                    .foregroundStyle(.white)
                 }
                 .disabled(downloads.isRunning || offlineOnly)  // downloading needs the network
                 .accessibilityLabel("Download area")
