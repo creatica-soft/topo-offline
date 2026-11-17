@@ -5,13 +5,18 @@ import Foundation
 enum TileNetwork {
     static let userAgent: String = {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
-        return "TopoOffline/\(version) (iOS; offline topo map viewer)"
+        return "TopoOffline/\(version) (iOS; offline topo map viewer; +\(website))"
     }()
+
+    /// The app's website, sent as the User-Agent contact and as the Referer so map providers can
+    /// tell the app's requests apart (swisstopo asked for a Referer). Identical for every user.
+    static let website = "https://creatica-soft.github.io/topo-offline/"
+    static let headers = ["User-Agent": userAgent, "Referer": website]
 
     /// Used while browsing. Keeps a disk cache so recently viewed areas still show with no signal.
     static let browse: URLSession = {
         let config = URLSessionConfiguration.default
-        config.httpAdditionalHeaders = ["User-Agent": userAgent]
+        config.httpAdditionalHeaders = headers
         config.httpCookieStorage = nil
         config.httpShouldSetCookies = false
         config.urlCache = URLCache(memoryCapacity: 32 << 20, diskCapacity: 300 << 20)
@@ -24,7 +29,7 @@ enum TileNetwork {
     /// connection limit so we stay polite to the government servers.
     static let download: URLSession = {
         let config = URLSessionConfiguration.default
-        config.httpAdditionalHeaders = ["User-Agent": userAgent]
+        config.httpAdditionalHeaders = headers
         config.httpCookieStorage = nil
         config.httpShouldSetCookies = false
         config.urlCache = nil

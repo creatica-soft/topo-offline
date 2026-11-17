@@ -15,8 +15,8 @@ and New Zealand).
 
 - **Topo maps**: NSW, Queensland and Tasmania state topo maps, New Zealand's LINZ Topo50/Topo250,
   the USGS topo map for the United States (including Alaska, Hawaii and Puerto Rico), NRCan's
-  Toporama for Canada, swisstopo's national map and Kartverket's topo map for Norway (the Swiss
-  and Norwegian maps work online only until their providers allow offline copies), and
+  Toporama for Canada, swisstopo's national map and Kartverket's topo map for Norway (the
+  Norwegian map works online only until Kartverket allows offline copies), and
   Geoscience Australia's 1:250k national map underneath the Australian state maps (optionally
   shown when zoomed out, with the state map taking over at walking scale).
 - **Offline areas**: download what's on screen at full detail (with the tile count and size shown
