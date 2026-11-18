@@ -29,8 +29,9 @@ Privacy & Security › Location Services.
 Recording is off unless you turn it on. While you're recording a walk or ride or following a route,
 the app keeps using your location when the phone is locked or another app is open, and iOS shows a
 location indicator while it does. This stops when you tap Stop or Stop following. Recordings are
-saved only on your phone. The warning when you stray from a route you're following is a
-notification created on your phone, without sending anything over the internet.
+saved only on your phone. The warning when you stray from a route you're following, and the
+reminder to pause a recording that looks stopped, are notifications created on your phone, without
+sending anything over the internet.
 
 ## Map and data requests
 

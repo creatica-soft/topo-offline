@@ -50,7 +50,7 @@ struct TrackDetailView: View {
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                     if speed != nil {
-                        Text("Speed is worked out from the GPS times, averaged over about \(units.distance(2 * WalkSpeed.window)). Time spent within \(units.distance(WalkSpeed.stopRadius)) of one spot for \(Int(WalkSpeed.minStop / 60)) minutes or more counts as stopped, and the average speed leaves stops out.")
+                        Text("Speed is worked out from the GPS times, averaged over about \(units.distance(2 * WalkSpeed.window)). Staying within \(units.distance(StopFinder.Rule.current.radius)) of one spot for \(Int(StopFinder.Rule.current.duration / 60)) minutes or more counts as stopped (change it in Settings › Recording), and the average speed leaves stops out.")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                     Text("Elevations are from terrain data (a 10–30 m grid, depending on the country) and smoothed, so totals are approximate.")

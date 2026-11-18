@@ -163,6 +163,7 @@ struct RouteCard: View {
     let onClose: () -> Void
     let onFollow: () -> Void
     let onEdit: () -> Void
+    @Environment(RouteStore.self) private var store
 
     var body: some View {
         VStack(spacing: 6) {
@@ -172,7 +173,8 @@ struct RouteCard: View {
                 Button(action: onFollow) {
                     Label(isFollowing ? "Stop following" : "Follow", systemImage: isFollowing ? "xmark" : "location.north.line")
                 }
-                ShareLink(item: GPXFile(route: route), preview: SharePreview(GPX.fileName(for: route))) {
+                // Every recorded point, not the tidied copy shown in the app.
+                ShareLink(item: GPXFile(route: store.original(route)), preview: SharePreview(GPX.fileName(for: route))) {
                     Label("GPX", systemImage: "square.and.arrow.up")
                 }
                 if route.kind == .planned {

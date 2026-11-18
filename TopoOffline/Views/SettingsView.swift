@@ -9,6 +9,10 @@ struct SettingsView: View {
     @AppStorage("recordingEnabled") private var recordingEnabled = false
     @AppStorage("recordingDetail") private var recordingDetail = WalkRecorder.Detail.standard.rawValue
     @AppStorage(RouteFollower.warnKey) private var warnMeters = RouteProgress.offRouteMeters
+    @AppStorage(StopFinder.Rule.radiusKey) private var stopRadius = StopFinder.Rule.standard.radius
+    @AppStorage(StopFinder.Rule.durationKey) private var stopDuration = StopFinder.Rule.standard.duration
+    @AppStorage(WalkRecorder.reminderKey) private var pauseReminder = true
+    @Environment(RouteStore.self) private var routes
     @Environment(\.units) private var units
 
     /// Countries with maps, in the order they're listed.
@@ -85,6 +89,24 @@ struct SettingsView: View {
                     Text(recordingEnabled
                          ? "\(WalkRecorder.Detail(rawValue: recordingDetail)?.explanation ?? "") A record button appears on the map. Recording keeps GPS on while the phone is locked, which uses a lot more battery: carry a power bank on long trips. Your recordings stay on your iPhone."
                          : "Off to save battery. When on, a record button appears on the map.")
+                }
+
+                if recordingEnabled {
+                    Section {
+                        Picker("Stopped when within", selection: $stopRadius) {
+                            ForEach(StopFinder.Rule.radiusChoices, id: \.self) { Text(units.distance($0)).tag($0) }
+                        }
+                        Picker("For at least", selection: $stopDuration) {
+                            ForEach(StopFinder.Rule.durationChoices, id: \.self) { Text("\(Int($0 / 60)) min").tag($0) }
+                        }
+                        Toggle("Remind me to pause", isOn: $pauseReminder)
+                    } header: {
+                        Text("Stops")
+                    } footer: {
+                        Text("Staying within \(units.distance(stopRadius)) of one spot for \(Int(stopDuration / 60)) minutes counts as a stop: it isn't counted in moving time or speed, and GPS wandering there (indoors, around camp) isn't drawn or added to the distance. A larger distance or shorter time catches more stops, but walking slower than about \(units.speed(StopFinder.Rule(radius: stopRadius, duration: stopDuration).slowestMoving)) could then count as stopped. The reminder is a notification with a Pause button, so a long stop doesn't run the battery down. Pausing is always the surest way.")
+                    }
+                    .onChange(of: stopRadius) { routes.retidy() }
+                    .onChange(of: stopDuration) { routes.retidy() }
                 }
 
                 Section {

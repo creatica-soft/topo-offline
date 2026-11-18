@@ -327,6 +327,7 @@ struct ContentView: View {
     private func finishLeftover(_ walk: SavedRoute) {
         var w = walk
         w.inProgress = false
+        w.legs.removeAll { $0.coords.isEmpty }
         if w.legs.reduce(0, { $0 + $1.coords.count / 2 }) >= 4 {
             routes.save(w)
             routes.setShown(w.id, true)

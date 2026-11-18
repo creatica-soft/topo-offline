@@ -108,3 +108,53 @@ struct SavedRoute: Codable, Identifiable, Hashable, Sendable {
         "Trip \(date.formatted(date: .abbreviated, time: .shortened))"
     }
 }
+
+extension SavedRoute {
+    /// For showing a recording: each stop (see `StopFinder`) collapsed to one spot, kept at its
+    /// start and end times. GPS wanders while you stand still, especially indoors, and every
+    /// wobble would otherwise be drawn as a scribble and added to the distance and climb. The
+    /// saved file keeps every point, so a different stop rule can be applied later.
+    func tidyingStops(rule: StopFinder.Rule = .current) -> SavedRoute {
+        let r = self
+        guard kind == .recorded, !inProgress, !times.isEmpty else { return r }
+        var out = r
+        var legs: [Leg] = [], newTimes: [Double] = [], newAlts: [Double?] = []
+        var start = 0
+        for leg in self.legs {
+            let pts = leg.points
+            let end = start + pts.count
+            guard end <= times.count, end <= altitudes.count else { return r }  // inconsistent: leave as is
+            let ts = Array(times[start..<end]), alts = Array(altitudes[start..<end])
+            start = end
+            var keepP: [CLLocationCoordinate2D] = [], keepT: [Double] = [], keepA: [Double?] = []
+            var i = 0
+            let stops = StopFinder.stops(pts, ts, rule: rule)
+            var s = 0
+            while i < pts.count {
+                if s < stops.count, stops[s].lowerBound == i {
+                    let range = stops[s]
+                    let slice = pts[range]
+                    let mid = CLLocationCoordinate2D(latitude: slice.map(\.latitude).reduce(0, +) / Double(slice.count),
+                                                     longitude: slice.map(\.longitude).reduce(0, +) / Double(slice.count))
+                    let known = alts[range].compactMap { $0 }
+                    let alt: Double? = known.isEmpty ? nil : known.reduce(0, +) / Double(known.count)
+                    keepP += [mid, mid]
+                    keepT += [ts[range.lowerBound], ts[range.upperBound]]
+                    keepA += [alt, alt]
+                    i = range.upperBound + 1
+                    s += 1
+                } else {
+                    keepP.append(pts[i]); keepT.append(ts[i]); keepA.append(alts[i])
+                    i += 1
+                }
+            }
+            legs.append(Leg(coords: SavedRoute.coords(keepP), followsTracks: leg.followsTracks))
+            newTimes += keepT
+            newAlts += keepA
+        }
+        out.legs = legs
+        out.times = newTimes
+        out.altitudes = newAlts
+        return out
+    }
+}

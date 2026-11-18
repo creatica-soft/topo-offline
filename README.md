@@ -53,9 +53,11 @@ and New Zealand).
   Files, AirDrop or other apps.
 - **Recording** (off by default, to save battery): records your walk or ride with GPS, also while
   the phone is locked, at a chosen detail (about every 5, 15 or 50 m). It shows the time,
-  distance and climb as you go, and can be paused (GPS off) for a long break. Afterwards it shows
-  a speed chart under the elevation profile, with moving time, time stopped and average speed.
-  Recordings stay on the phone.
+  distance and climb as you go, and can be paused (GPS off) for a long break; if it looks stopped
+  (within 50 m for 5 minutes, adjustable), a notification offers a Pause button. Afterwards it
+  shows a speed chart under the elevation profile, with moving time, time stopped and average
+  speed; GPS wandering during stops (indoors, around camp) isn't drawn or counted. Every recorded
+  point is kept, and GPX export includes them all. Recordings stay on the phone.
 - **Units**: kilometres and metres or miles and feet, following the phone's region or chosen in
   Settings (the gear on the map), where you can also pick the map and turn on recording.
 - Location, compass and an always-visible scale bar, all working without signal.

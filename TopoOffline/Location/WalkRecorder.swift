@@ -77,6 +77,14 @@ final class WalkRecorder: NSObject {
     @ObservationIgnored private var session: CLBackgroundActivitySession?
     @ObservationIgnored private var lastSave = Date.distantPast
     @ObservationIgnored private var startWhenAllowed = false
+    /// Pause reminder: where the walker last moved away from (beyond the stop distance), and when.
+    @ObservationIgnored private var anchor: GPSFix?
+    /// The reminder has been shown (or is due) for this stop.
+    @ObservationIgnored private var reminderDue: Date?
+
+    /// Settings › Recording › Remind me to pause (on unless turned off).
+    static let reminderKey = "pauseReminder"
+    private var remindsToPause: Bool { UserDefaults.standard.object(forKey: Self.reminderKey) as? Bool ?? true }
 
     init(store: RouteStore) {
         self.store = store
@@ -107,6 +115,7 @@ final class WalkRecorder: NSObject {
     func pause() {
         guard current != nil, !isPaused else { return }
         stopUpdates()
+        clearReminder()
         isPaused = true
         saveNow()
     }
@@ -131,6 +140,7 @@ final class WalkRecorder: NSObject {
     func stop() -> SavedRoute? {
         guard var walk = current else { return nil }
         stopUpdates()
+        clearReminder()
         startWhenAllowed = false
         current = nil
         walk.inProgress = false
@@ -163,6 +173,7 @@ final class WalkRecorder: NSObject {
         isPaused = false
         version += 1
         saveNow()
+        if remindsToPause { Notifications.shared.requestPermission() }
         manager.distanceFilter = detail.distanceFilter
         manager.desiredAccuracy = detail.accuracy
         switch manager.authorizationStatus {
@@ -184,6 +195,46 @@ final class WalkRecorder: NSObject {
         manager.allowsBackgroundLocationUpdates = false
         session?.invalidate()
         session = nil
+    }
+
+    private func clearReminder() {
+        Notifications.shared.remove(Notifications.stopReminder)
+        anchor = nil
+        reminderDue = nil
+    }
+
+    /// Reminds the walker to pause a recording that looks stopped (see `StopFinder.Rule`): a
+    /// notification is kept scheduled for `duration` after they last moved further than `radius`,
+    /// so it arrives even if no more GPS points come; drifting points (indoors) are checked as
+    /// they arrive.
+    private func checkStopped(_ fix: GPSFix, walk: SavedRoute) {
+        guard remindsToPause else { return }
+        let rule = StopFinder.Rule.current
+        if anchor == nil || TrackPath.meters(anchor!.coordinate, fix.coordinate) > rule.radius {
+            // Moving: (re)start the countdown from here, clearing a reminder already shown.
+            if let due = reminderDue, Date() >= due { Notifications.shared.remove(Notifications.stopReminder) }
+            anchor = fix
+            reminderDue = Date(timeIntervalSince1970: fix.time + rule.duration)
+            postReminder(rule, after: rule.duration)
+            return
+        }
+        guard let due = reminderDue, Date() < due else { return }  // already shown
+        // GPS drifting about one spot: the recent points tell.
+        let n = walk.legs.last.map { $0.coords.count / 2 } ?? 0
+        let pts = Array(pieces.last ?? []).suffix(n), ts = walk.times.suffix(pts.count)
+        let recent = zip(pts, ts).filter { $0.1 >= fix.time - rule.duration }
+        if let first = recent.first, fix.time - first.1 >= rule.duration * 0.8,
+           StopFinder.stops(recent.map(\.0), recent.map(\.1), rule: rule).contains(where: { $0.upperBound == recent.count - 1 }) {
+            reminderDue = Date()
+            postReminder(rule, after: nil)
+        }
+    }
+
+    private func postReminder(_ rule: StopFinder.Rule, after delay: TimeInterval?) {
+        let units = Units(UnitSetting(rawValue: UserDefaults.standard.string(forKey: "units") ?? "") ?? .automatic)
+        Notifications.shared.post(Notifications.stopReminder, title: "Stopped?",
+                                  body: "You've stayed within \(units.distance(rule.radius)) for \(Int(rule.duration / 60)) minutes. Pause the recording to save battery.",
+                                  after: delay)
     }
 
     private func startUpdates() {
@@ -220,6 +271,7 @@ final class WalkRecorder: NSObject {
         pieces[pieces.count - 1].append(fix.coordinate)
         climb = RecordingFilter.climb(walk)
         version += 1
+        checkStopped(fix, walk: walk)
         if Date().timeIntervalSince(lastSave) > 60 { saveNow() }
     }
 }

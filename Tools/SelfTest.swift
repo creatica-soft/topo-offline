@@ -493,6 +493,69 @@ do {
         } else { check(false, "speed for a paused walk") }
         let back = GPX.routes(from: GPX.data(for: paused), fallbackName: "x").first
         check(back?.legs.count == 2 && back?.path.count == 22, "pause: GPX has a segment per piece")
+
+        // Shopping with the recording on: ride 1 km, 28 minutes indoors with GPS wandering
+        // ±50 m (each wobble recorded, some long silences), ride on 1 km.
+        // Repeatable: the same "random" drift every run.
+        struct Seeded: RandomNumberGenerator {
+            var state: UInt64
+            mutating func next() -> UInt64 { state = state &* 6364136223846793005 &+ 1442695040888963407; return state }
+        }
+        var rng = Seeded(state: 42)
+        // Indoor GPS drift like a real shop visit: around one spot, 90% within about 45 m.
+        func wobble() -> Double {
+            let u = max(1e-9, Double.random(in: 0..<1, using: &rng)), v = Double.random(in: 0..<1, using: &rng)
+            return 20 * (-2 * log(u)).squareRoot() * cos(2 * .pi * v)
+        }
+        var sp: [CLLocationCoordinate2D] = [], st: [Double] = []
+        var tt = 0.0
+        for i in 0...66 { sp.append(off(Double(i) * 15, 0)); st.append(tt); tt += 15 / (12 / 3.6) }
+        let shop = Double(66 * 15)
+        let shopEnd = tt + 28 * 60
+        while tt < shopEnd {
+            tt += [3.0, 5, 8, 12, 20, 60][Int.random(in: 0..<6, using: &rng)] + (Int.random(in: 0..<20, using: &rng) == 0 ? 600 : 0)
+            sp.append(off(shop + wobble(), wobble())); st.append(min(tt, shopEnd))
+        }
+        tt = shopEnd
+        for i in 1...66 { tt += 15 / (12 / 3.6); sp.append(off(shop + Double(i) * 15, 0)); st.append(tt) }
+        if let s = WalkSpeed(path: sp, times: st, rule: .standard) {
+            check(abs(s.stoppedTime - 28 * 60) < 4 * 60 && abs(s.averageMoving * 3.6 - 12) < 2.5,
+                  "indoor drift counts as stopped (\(Int(s.stoppedTime / 60)) min stopped, \(String(format: "%.1f", s.averageMoving * 3.6)) km/h moving)")
+        } else { check(false, "speed for the shopping trip") }
+        var shopping = SavedRoute(name: "Shopping", kind: .recorded)
+        shopping.legs = [SavedRoute.Leg(coords: SavedRoute.coords(sp), followsTracks: false)]
+        shopping.times = st
+        shopping.altitudes = st.map { _ in 5.0 }
+        let tidy = shopping.tidyingStops(rule: .standard)
+        check(shopping.lengthMeters > tidy.lengthMeters + 300 && abs(tidy.lengthMeters - 2000) < 150 && tidy.times.count == tidy.path.count
+              && abs((WalkSpeed(route: tidy, rule: .standard)?.stoppedTime ?? 0) - 28 * 60) < 4 * 60,
+              "tidying collapses the shop visit (\(Int(shopping.lengthMeters)) m -> \(Int(tidy.lengthMeters)) m, true 2000 m)")
+        // The stop rule from Settings: a tight one misses the wandering, a loose one catches it all.
+        let tight = WalkSpeed(path: sp, times: st, rule: StopFinder.Rule(radius: 20, duration: 600))?.stoppedTime ?? 0
+        let loose = WalkSpeed(path: sp, times: st, rule: StopFinder.Rule(radius: 100, duration: 300))?.stoppedTime ?? 0
+        check(tight < loose && loose > 26 * 60, "stop rule settings: 20 m/10 min \(Int(tight / 60)) min, 100 m/5 min \(Int(loose / 60)) min stopped")
+        // A slow, steady climb isn't a stop with the standard rule.
+        var climbP: [CLLocationCoordinate2D] = [], climbT: [Double] = []
+        for i in 0...100 { climbP.append(off(Double(i) * 15 + Double.random(in: -5...5, using: &rng), Double.random(in: -5...5, using: &rng))); climbT.append(Double(i) * 15 / (1.2 / 3.6)) }
+        check((WalkSpeed(path: climbP, times: climbT, rule: .standard)?.stoppedTime ?? 1e9) < 5 * 60, "a 1.2 km/h climb counts as moving")
+        // The store keeps every point; the app shows the tidied copy.
+        let shopDir = dataDir.appendingPathComponent("ShopRoutes")
+        let shopStore = RouteStore(directory: shopDir, shownKey: "selftest-shop")
+        shopStore.save(shopping)
+        let reloaded = RouteStore(directory: shopDir, shownKey: "selftest-shop")
+        check(reloaded.original(reloaded.routes[0]) == shopping && reloaded.routes[0].path.count < shopping.path.count,
+              "recordings saved in full, shown tidied (\(shopping.path.count) points, \(reloaded.routes[0].path.count) shown)")
+        reloaded.delete(shopping)
+        // A real recording to look at (not part of the test): CHECK_GPX=/path/to/file.gpx
+        if let gpxPath = ProcessInfo.processInfo.environment["CHECK_GPX"],
+           let data = FileManager.default.contents(atPath: gpxPath),
+           var real = GPX.routes(from: data, fallbackName: "check").first {
+            real.kind = .recorded
+            if let s = WalkSpeed(route: real) {
+                let t = real.tidyingStops(rule: .standard)
+                print("     \(gpxPath): \(Int(real.lengthMeters)) m -> \(Int(t.lengthMeters)) m tidied; stopped \(Int(s.stoppedTime / 60)) of \(Int(s.totalTime / 60)) min, \(String(format: "%.1f", s.averageMoving * 3.6)) km/h moving")
+            }
+        }
     }
 
     // GPS fixes: a bad-accuracy fix and a 1 km jump are dropped
@@ -510,7 +573,7 @@ do {
     rs.save(walk); rs.setShown(walk.id, true)
     let imported = rs.importGPX(Data(other.utf8), fileName: "Trip.gpx")
     let rs2 = RouteStore(directory: routesDir, shownKey: "selftest-shown")
-    check(rs2.routes.count == 3 && rs2.route(id: walk.id) == walk && rs2.shownIDs.count == 3, "routes saved and reloaded (\(rs2.routes.count))")
+    check(rs2.routes.count == 3 && rs2.route(id: walk.id).map(rs2.original) == walk && rs2.shownIDs.count == 3, "routes saved and reloaded (\(rs2.routes.count))")
     rs2.delete(walk); imported.forEach(rs2.delete)
     check(RouteStore(directory: routesDir, shownKey: "selftest-shown").routes.isEmpty, "routes deleted")
 }

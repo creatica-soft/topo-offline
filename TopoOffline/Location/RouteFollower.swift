@@ -2,7 +2,6 @@ import Foundation
 import CoreLocation
 import Observation
 import UIKit
-import UserNotifications
 
 /// Following a route: progress along it, and a warning on straying more than 100 m from it.
 /// GPS stays on while the phone is locked (iOS shows its location indicator), so the warning
@@ -45,7 +44,6 @@ final class RouteFollower: NSObject {
     /// Where along the route direction and distance walked were last updated.
     @ObservationIgnored private var directionMark: Double?
     @ObservationIgnored private var walkedMark: Double?
-    private static let notificationID = "off-route"
 
     override init() {
         super.init()
@@ -76,10 +74,7 @@ final class RouteFollower: NSObject {
         followingID = id
         path = route.path
         self.pieces = pieces
-        let center = UNUserNotificationCenter.current()
-        center.delegate = self
-        // Asks once; if notifications are turned off, the warning is a vibration in the app only.
-        center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        Notifications.shared.requestPermission()
         switch manager.authorizationStatus {
         case .notDetermined:
             startWhenAllowed = true
@@ -108,7 +103,7 @@ final class RouteFollower: NSObject {
         walked = 0
         directionMark = nil
         walkedMark = nil
-        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [Self.notificationID])
+        Notifications.shared.remove(Notifications.offRoute)
     }
 
     private func startUpdates() {
@@ -132,7 +127,7 @@ final class RouteFollower: NSObject {
             warn(p, route: route)
         } else if isOffRoute, p.offBy < warnAt * 0.6 {
             isOffRoute = false
-            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [Self.notificationID])
+            Notifications.shared.remove(Notifications.offRoute)
         }
         if !isOffRoute { track(p.done) }
     }
@@ -148,12 +143,8 @@ final class RouteFollower: NSObject {
     private func warn(_ p: RouteProgress, route: SavedRoute) {
         UINotificationFeedbackGenerator().notificationOccurred(.warning)
         let units = Units(UnitSetting(rawValue: UserDefaults.standard.string(forKey: "units") ?? "") ?? .automatic)
-        let content = UNMutableNotificationContent()
-        content.title = "Off route"
-        content.body = "\(route.name) is \(units.distance(p.offBy)) to the \(p.directionToRoute)."
-        content.sound = .default
-        UNUserNotificationCenter.current().add(
-            UNNotificationRequest(identifier: Self.notificationID, content: content, trigger: nil))
+        Notifications.shared.post(Notifications.offRoute, title: "Off route",
+                                  body: "\(route.name) is \(units.distance(p.offBy)) to the \(p.directionToRoute).")
     }
 }
 
@@ -181,12 +172,5 @@ extension RouteFollower: CLLocationManagerDelegate {
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         // No fix yet, or heavy cover: normal on a walk, keep going.
-    }
-}
-
-extension RouteFollower: UNUserNotificationCenterDelegate {
-    /// With the app on screen the banner at the top already shows it: play the sound only.
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.sound]
     }
 }
