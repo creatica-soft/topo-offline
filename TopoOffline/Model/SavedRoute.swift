@@ -65,7 +65,7 @@ struct SavedRoute: Codable, Identifiable, Hashable, Sendable {
     var kindName: String {
         switch kind {
         case .planned: return "Route"
-        case .recorded: return "Recorded walk"
+        case .recorded: return "Recorded trip"
         case .imported: return "Imported route"
         }
     }
@@ -103,8 +103,8 @@ struct SavedRoute: Codable, Identifiable, Hashable, Sendable {
         points.flatMap { [$0.longitude, $0.latitude] }
     }
 
-    /// "Walk 16 Nov 2026, 9:12 am"
+    /// "Trip 16 Nov 2026, 9:12 am"
     static func recordingName(at date: Date = Date()) -> String {
-        "Walk \(date.formatted(date: .abbreviated, time: .shortened))"
+        "Trip \(date.formatted(date: .abbreviated, time: .shortened))"
     }
 }

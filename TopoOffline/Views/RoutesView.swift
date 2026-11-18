@@ -68,7 +68,7 @@ struct RoutesView: View {
                 if !recordingEnabled {
                     Section {
                     } footer: {
-                        Text("To record your walks with GPS, turn on Walk recording in Settings (the gear on the map).")
+                        Text("To record your walks and rides with GPS, turn on Recording in Settings (the gear on the map).")
                     }
                 }
             }

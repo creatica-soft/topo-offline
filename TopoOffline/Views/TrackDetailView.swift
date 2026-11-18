@@ -176,7 +176,7 @@ struct TrackDetailView: View {
         .chartYAxisLabel(units.speedUnit)
         .chartXSelection(value: $selected)
         .frame(height: 110)
-        .accessibilityLabel("Speed along the walk, averaging \(units.speed(s.averageMoving)) while moving")
+        .accessibilityLabel("Speed along the trip, averaging \(units.speed(s.averageMoving)) while moving")
     }
 
     @ViewBuilder

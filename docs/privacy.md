@@ -26,10 +26,10 @@ show your progress along a route you're following. Your location is used only on
 is never sent anywhere by the app. You can turn location access off at any time in Settings ›
 Privacy & Security › Location Services.
 
-Walk recording is off unless you turn it on. While you're recording a walk or following a route,
+Recording is off unless you turn it on. While you're recording a walk or ride or following a route,
 the app keeps using your location when the phone is locked or another app is open, and iOS shows a
-location indicator while it does. This stops when you tap Stop or Stop following. Recorded walks
-are saved only on your phone. The warning when you stray from a route you're following is a
+location indicator while it does. This stops when you tap Stop or Stop following. Recordings are
+saved only on your phone. The warning when you stray from a route you're following is a
 notification created on your phone, without sending anything over the internet.
 
 ## Map and data requests
@@ -65,7 +65,7 @@ Offline mode. The app is built with Apple's iOS and MapKit frameworks, which are
 ## Data stored on your phone
 
 Maps and data you download and your saved areas are stored only on your phone. They aren't
-included in iCloud backups and aren't shared. Your routes and recorded walks are also stored only
+included in iCloud backups and aren't shared. Your routes and recordings are also stored only
 on your phone. They are included in your own device backups (iCloud or computer), like any app's
 documents. They leave the phone only if you share them as a GPX file yourself. A GPX file you
 import is copied into the app and isn't sent anywhere. Your settings (such as the map you last chose) are

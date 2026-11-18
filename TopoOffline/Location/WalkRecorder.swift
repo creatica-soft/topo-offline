@@ -3,7 +3,7 @@ import CoreLocation
 import Observation
 
 /// Records a walk with GPS, including while the phone is locked (iOS shows its blue location
-/// indicator). Off unless the user turns on "Record walks". Points never leave the phone.
+/// indicator). Off unless the user turns on "Record walks and rides". Points never leave the phone.
 @MainActor
 @Observable
 final class WalkRecorder: NSObject {

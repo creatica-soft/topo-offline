@@ -55,7 +55,7 @@ struct RouteFeatures: ViewModifier {
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("Recording a walk or following a route needs location access. Allow it in Settings › Topo Offline › Location (While Using the App).")
+                Text("Recording or following a route needs location access. Allow it in Settings › Topo Offline › Location (While Using the App).")
             }
             .alert(importMessage ?? "",
                    isPresented: Binding(get: { importMessage != nil }, set: { if !$0 { importMessage = nil } })) {

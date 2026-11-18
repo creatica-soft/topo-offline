@@ -71,7 +71,7 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Toggle("Record walks", isOn: $recordingEnabled)
+                    Toggle("Record walks and rides", isOn: $recordingEnabled)
                     if recordingEnabled {
                         Picker("Detail", selection: $recordingDetail) {
                             ForEach(WalkRecorder.Detail.allCases) { d in
@@ -80,10 +80,10 @@ struct SettingsView: View {
                         }
                     }
                 } header: {
-                    Text("Walk recording")
+                    Text("Recording")
                 } footer: {
                     Text(recordingEnabled
-                         ? "\(WalkRecorder.Detail(rawValue: recordingDetail)?.explanation ?? "") A record button appears on the map. Recording keeps GPS on while the phone is locked, which uses a lot more battery: carry a power bank on long walks. Your walks stay on your iPhone."
+                         ? "\(WalkRecorder.Detail(rawValue: recordingDetail)?.explanation ?? "") A record button appears on the map. Recording keeps GPS on while the phone is locked, which uses a lot more battery: carry a power bank on long trips. Your recordings stay on your iPhone."
                          : "Off to save battery. When on, a record button appears on the map.")
                 }
 
