@@ -26,6 +26,11 @@ struct TrackCard: View {
                     Text(track.kind)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                    if let uses = track.uses {
+                        Text(uses)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     switch profile {
                     case .ready(let p):
                         Text("\(length) · \(units.climb(up: p.ascent, down: p.descent))")

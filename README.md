@@ -1,6 +1,7 @@
 # Topo Offline
 
-An iPhone app for bushwalkers, trampers and hikers: official topographic maps for Australia, New
+An iPhone app for bushwalkers, trampers and hikers, and for cyclists and horse riders on the
+trails: official topographic maps for Australia, New
 Zealand, the United States, Canada, Switzerland and Norway, saved for use without phone signal,
 with walking tracks and trails, campsites, huts, closures and elevation profiles.
 
@@ -29,8 +30,9 @@ and New Zealand).
   walking-track and trail names.
 - **Walking tracks and trails** (NSW, QLD, TAS, VIC, NZ, US, Canada's national parks, BC and Ontario,
   Switzerland's named hiking routes and trail network, Norway's marked routes): tap a track to highlight all of it and
-  see its name, type and length. In Victoria, which has no free topo map, all tracks are drawn on
-  the map.
+  see its name, type and length, and who may use it where the agency publishes that (Queensland,
+  NZ DOC, the US and Ontario: cyclists, horse riders, dog rules). In Victoria, which has no free
+  topo map, all tracks are drawn on the map.
 - **Elevation profiles**: climb, descent, highest and lowest points, and a chart you can drag
   along to see the spot on the map.
 - **Campsites, huts and closures**: official campgrounds (NSW National Parks, Vicmap, the national
@@ -42,20 +44,20 @@ and New Zealand).
 - **Routes**: tap the map to plan a route. Between two points it follows the walking tracks where
   there are any (using downloaded tracks when offline) and goes straight elsewhere. Tap the line to
   insert a point; tap a point to move it, delete it or extend the route from the start or end. The
-  distance and climb update as you go. Saved routes can be followed, showing the distance done and
-  walked and to go (to the end you're heading for, worked out from which way you walk). Off the
+  distance and climb update as you go. Saved routes can be followed, showing the distance done and to
+  go (to the end you're heading for, worked out from which way you're going). Off the
   route by more than a chosen distance (100 m unless changed), it vibrates and says which way the
   route is; with the phone locked it sends a notification with sound (made on the phone, so it
   works without signal).
-- **GPX**: share routes and recorded walks as GPX files, and import GPX tracks and routes from
+- **GPX**: share routes and recordings as GPX files, and import GPX tracks and routes from
   Files, AirDrop or other apps.
-- **Walk recording** (off by default, to save battery): records your walk with GPS, also while
+- **Recording** (off by default, to save battery): records your walk or ride with GPS, also while
   the phone is locked, at a chosen detail (about every 5, 15 or 50 m). It shows the time,
   distance and climb as you go, and can be paused (GPS off) for a long break. Afterwards it shows
   a speed chart under the elevation profile, with moving time, time stopped and average speed.
-  Recorded walks stay on the phone.
+  Recordings stay on the phone.
 - **Units**: kilometres and metres or miles and feet, following the phone's region or chosen in
-  Settings (the gear on the map), where you can also pick the map and turn on walk recording.
+  Settings (the gear on the map), where you can also pick the map and turn on recording.
 - Location, compass and an always-visible scale bar, all working without signal.
 
 ## Building

@@ -520,7 +520,7 @@ struct ContentView: View {
                             .background(.regularMaterial, in: Capsule())
                             .foregroundStyle(.red)
                     }
-                    .accessibilityHint("Records your walk with GPS, also while the phone is locked")
+                    .accessibilityHint("Records your trip with GPS, also while the phone is locked")
                 }
             }
             HStack(spacing: 12) {

@@ -25,6 +25,8 @@ struct TrackLayer: Sendable {
     let attribution: String
     /// Turns raw attributes into a (name, kind); nil skips the feature.
     let describe: @Sendable ([String: Any]) -> (name: String?, kind: String)?
+    /// Permitted uses from the attributes, for the sources that publish them (ArcGIS ones).
+    var uses: (@Sendable ([String: Any]) -> String?)? = nil
 
     /// Country code, as in `TileSource.country` (the Australian states are "AU").
     var country: String { ["NSW", "QLD", "TAS", "VIC"].contains(state) ? "AU" : state }
@@ -61,7 +63,7 @@ enum TrackSources {
             queryURL: URL(string: "https://spatial-gis.information.qld.gov.au/arcgis/rest/services/Environment/ParksTerrestrialProtectedAreas/MapServer/\(n)/query")!,
             baseWhere: "1=1",
             nameFields: ["name", "visitor_id"],
-            outFields: "name,visitor_id,class,status",
+            outFields: "name,visitor_id,class,status,ped,mtb,horse,tb",
             orderField: "objectid",
             coverage: TileSources.qld.coverage,
             attribution: "Tracks: © State of Queensland (Department of Environment and Science), CC BY 4.0",
@@ -73,6 +75,19 @@ enum TrackSources {
                     return (name, "\(kind) (closed)")
                 }
                 return (name, kind)
+            },
+            uses: { a in
+                // `mtb` and `horse` hold a grade ("Intermediate", "Horse trail class 1 easy") where
+                // allowed; "Unclassified" means not assessed, so it's not taken as allowed.
+                let cls = (a["class"] as? String)?.lowercased() ?? ""
+                func graded(_ key: String) -> Bool {
+                    guard let v = (a[key] as? String)?.lowercased(), !v.isEmpty else { return false }
+                    return v != "no" && v != "unclassified"
+                }
+                return TrackUses.text(walkers: (a["ped"] as? String)?.lowercased() == "no" ? false : true,
+                                      cyclists: graded("mtb") || cls == "mountain bike track",
+                                      horses: graded("horse") || cls == "horse trail",
+                                      others: (a["tb"] as? String)?.lowercased() == "yes" ? ["trail bikes"] : [])
             })
     }
     static let qldWalking = qldLayer(5, id: "qld-walking", kind: "Walking track")
@@ -131,6 +146,17 @@ enum TrackSources {
                 if let duration = chars["WEB_WALKING_DURATION"]?.first { kind += ", \(duration.lowercased())" }
                 if DOC.isClosed(chars) { kind += " (closed)" }
                 return (DOC.cleanName(a["TechObjectName"] as? String), kind)
+            },
+            uses: { a in
+                let chars = DOC.characteristics(a)
+                let bikes = chars["WEB_MTB_DURATION"] != nil || (a["SubObjectType"] as? String) == "Cycle Track"
+                let dogs: [String: String] = [
+                    "No Dogs": "no dogs", "Dogs on a leash only": "dogs on a leash only",
+                    "Dogs allowed - under control": "dogs under control",
+                    "Dogs with DOC permit -hunting": "dogs only with a DOC hunting permit",
+                ]
+                let dogRule = chars["WEB_DOGS_ALLOWED"]?.first.flatMap { dogs[$0] }
+                return TrackUses.text(walkers: true, cyclists: bikes, horses: false, notes: dogRule.map { [$0] } ?? [])
             })
     }
     /// New Zealand DOC tracks (the Topo50 map already shows them, so they're tappable/searchable, not drawn).
@@ -143,9 +169,10 @@ enum TrackSources {
     static let usTrails = TrackLayer(
         id: "us-trails", state: "US",
         queryURL: URL(string: "https://carto.nationalmap.gov/arcgis/rest/services/transportation/MapServer/37/query")!,
-        baseWhere: "trailtype='Terra Trail' AND (hikerpedestrian IS NULL OR hikerpedestrian NOT IN ('N','No'))",
+        // Land trails open to walkers (or with no rule recorded), cyclists or horses.
+        baseWhere: "trailtype='Terra Trail' AND (hikerpedestrian IS NULL OR hikerpedestrian NOT IN ('N','No') OR bicycle IN ('Y','Yes') OR packsaddle IN ('Y','Yes'))",
         nameFields: ["name"],
-        outFields: "name,primarytrailmaintainer",
+        outFields: "name,primarytrailmaintainer,hikerpedestrian,bicycle,packsaddle,ebike",
         orderField: "objectid",
         coverage: TileSources.usCoverage,
         attribution: "Trails: USGS National Digital Trails (public domain)",
@@ -156,6 +183,17 @@ enum TrackSources {
                                "State": "State", "USACE": "Army Corps"]
             let by = (a["primarytrailmaintainer"] as? String).flatMap { maintainers[$0] }
             return (name, by.map { "Trail · \($0)" } ?? "Trail")
+        },
+        uses: { a in
+            func yes(_ key: String) -> Bool? {
+                switch (a[key] as? String)?.lowercased() {
+                case "y", "yes": return true
+                case "n", "no": return false
+                default: return nil
+                }
+            }
+            return TrackUses.text(walkers: yes("hikerpedestrian"), cyclists: yes("bicycle") ?? false,
+                                  horses: yes("packsaddle") ?? false, others: yes("ebike") == true ? ["e-bikes"] : [])
         })
 
     /// Switzerland: the signposted hiking trail network (swissTLM3D Wanderwege). Pieces have no
@@ -259,13 +297,14 @@ enum TrackSources {
             return (name, "Trail · BC Recreation Sites and Trails")
         })
 
-    /// Ontario: the Ontario Trail Network (Open Government Licence – Ontario), walking trails only.
+    /// Ontario: the Ontario Trail Network (Open Government Licence – Ontario): trails open to walkers,
+    /// cyclists or horses (not paddling routes or motorised-only trails).
     static let onTrails = TrackLayer(
         id: "on-trails", state: "CA",
         queryURL: URL(string: "https://ws.lioservices.lrc.gov.on.ca/arcgis1071a/rest/services/LIO_OPEN_DATA/LIO_Open04/MapServer/19/query")!,
-        baseWhere: "(PERMITTED_USES LIKE '%Hiking%' OR PERMITTED_USES LIKE '%Walking%')",
+        baseWhere: "(PERMITTED_USES LIKE '%Hiking%' OR PERMITTED_USES LIKE '%Walking%' OR PERMITTED_USES LIKE '%Cycling%' OR PERMITTED_USES LIKE '%Equestrian%')",
         nameFields: ["TRAIL_NAME"],
-        outFields: "TRAIL_NAME,TRAIL_ASSOCIATION",
+        outFields: "TRAIL_NAME,TRAIL_ASSOCIATION,PERMITTED_USES",
         orderField: "OBJECTID",
         coverage: BoundingBox(minLat: 41.6, minLon: -95.2, maxLat: 56.9, maxLon: -74.3),
         attribution: "Trails: Ontario Trail Network, Open Government Licence – Ontario",
@@ -273,6 +312,12 @@ enum TrackSources {
             let raw = (a["TRAIL_NAME"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
             let by = (a["TRAIL_ASSOCIATION"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
             return (raw.isEmpty ? nil : raw, by.isEmpty ? "Trail" : "Trail · \(by)")
+        },
+        uses: { a in
+            let list = ((a["PERMITTED_USES"] as? String) ?? "").lowercased()
+            guard !list.isEmpty else { return nil }
+            return TrackUses.text(walkers: list.contains("hiking") || list.contains("walking"),
+                                  cyclists: list.contains("cycling"), horses: list.contains("equestrian"))
         })
 
     static let all = [nswPaths, qldWalking, qldGreatWalk, tasTracks, vicTrails, nzTracks, usTrails,
@@ -719,7 +764,7 @@ enum TrackSources {
                 for path in paths where path.count >= 2 {
                     let coords = path.flatMap { $0.count >= 2 ? [$0[0], $0[1]] : [] }
                     result.append(TrackSegment(layer: layer.id, name: described.name, kind: described.kind,
-                                               state: layer.state, coords: coords))
+                                               state: layer.state, coords: coords, uses: layer.uses?(attrs)))
                 }
             }
             let more = (json["exceededTransferLimit"] as? Bool) == true || features.count == page

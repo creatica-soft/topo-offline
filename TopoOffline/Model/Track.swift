@@ -13,6 +13,9 @@ struct TrackSegment: Codable, Hashable, Sendable {
     let state: String
     /// Longitude/latitude pairs: [lon0, lat0, lon1, lat1, ...]
     let coords: [Double]
+    /// Who may use it, where the agency says ("Open to walkers, cyclists and horse riders").
+    /// Nil when unknown (or saved before this was added).
+    var uses: String? = nil
 
     var points: [CLLocationCoordinate2D] {
         stride(from: 0, to: coords.count - 1, by: 2).map {
@@ -67,6 +70,13 @@ struct Track: Identifiable, Equatable, Sendable {
     let lengthKm: Double
     let bbox: BoundingBox
 
+    /// Permitted uses of most of the track (by length), where known.
+    var uses: String? {
+        var byUse: [String: Double] = [:]
+        for s in segments { if let u = s.uses { byUse[u, default: 0] += s.lengthMeters } }
+        return byUse.max { $0.value < $1.value }?.key
+    }
+
     init?(segments: [TrackSegment]) {
         guard let first = segments.first else { return nil }
         // A track mixing kinds (e.g. a Great Walk using ordinary walking tracks) shows the most specific.
@@ -105,4 +115,33 @@ struct Track: Identifiable, Equatable, Sendable {
     }
 
     static func == (a: Track, b: Track) -> Bool { a.id == b.id && a.segments.count == b.segments.count }
+}
+
+/// Who may use a track, in words, from what the agency publishes.
+enum TrackUses {
+    /// "Open to walkers, cyclists and horse riders · Dogs on a leash only". Nil when there's
+    /// nothing worth saying: walkers only (or unknown) is what a walking track is assumed to be.
+    static func text(walkers: Bool?, cyclists: Bool, horses: Bool, others: [String] = [], notes: [String] = []) -> String? {
+        var parts: [String] = []
+        if cyclists || horses || !others.isEmpty || walkers == false {
+            var who: [String] = []
+            if walkers == true { who.append("walkers") }
+            if cyclists { who.append("cyclists") }
+            if horses { who.append("horse riders") }
+            who += others
+            if !who.isEmpty {
+                parts.append("Open to \(list(who))" + (walkers == false ? ", not walkers" : ""))
+            } else if walkers == false {
+                parts.append("Not open to walkers")
+            }
+        }
+        parts += notes.map { $0.prefix(1).uppercased() + $0.dropFirst() }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// "a", "a and b", "a, b and c"
+    static func list(_ items: [String]) -> String {
+        guard items.count > 1 else { return items.first ?? "" }
+        return items.dropLast().joined(separator: ", ") + " and " + items.last!
+    }
 }

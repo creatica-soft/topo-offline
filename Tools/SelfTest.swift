@@ -210,6 +210,17 @@ let tama = try await TrackSources.search("tama lakes", near: tongariro)
 check(tama.contains { $0.displayName == "Upper Tama Lakes Track" }, "DOC track search 'tama lakes' -> \(tama.map { "\($0.displayName) (\($0.kind), \(String(format: "%.1f", $0.lengthKm)) km)" }.prefix(3))")
 let tongariroTracks = try await TrackSources.segments(in: BoundingBox(minLat: -39.3, minLon: 175.5, maxLat: -39.0, maxLon: 175.8), layers: [TrackSources.nzTracks])
 check(tongariroTracks.count > 20 && tongariroTracks.allSatisfy { $0.state == "NZ" }, "DOC tracks around Tongariro: \(tongariroTracks.count)")
+check(tama.first { $0.displayName == "Upper Tama Lakes Track" }?.uses?.contains("dogs") == true,
+      "DOC dog rule: \(tama.first?.uses ?? "none")")
+// Permitted uses, in words
+check(TrackUses.text(walkers: true, cyclists: true, horses: true) == "Open to walkers, cyclists and horse riders"
+      && TrackUses.text(walkers: false, cyclists: true, horses: false) == "Open to cyclists, not walkers"
+      && TrackUses.text(walkers: true, cyclists: false, horses: false) == nil
+      && TrackUses.text(walkers: true, cyclists: false, horses: false, notes: ["no dogs"]) == "No dogs",
+      "permitted uses text")
+let allan = try await TrackSources.search("mount allan", near: CLLocationCoordinate2D(latitude: -26.62, longitude: 152.65))
+check(allan.contains { $0.uses?.contains("horse riders") == true },
+      "QLD horse trail: \(allan.prefix(2).map { "\($0.displayName): \($0.uses ?? "-")" })")
 let nzPark = try await NZParkData.fetch()
 let huts = nzPark.sites.filter { $0.kind == "Hut" }, camps = nzPark.sites.filter { $0.kind == "Campsite" }
 print("     DOC: \(huts.count) huts (\(huts.filter { $0.closureStatus != .none }.count) closed), \(camps.count) campsites (\(camps.filter { $0.closureStatus != .none }.count) closed), \(nzPark.closed.count) closed tracks")
@@ -527,6 +538,9 @@ do {
         check(!TileSources.us.covers(.init(latitude: lat, longitude: lon)), "\(name) is outside the US outline")
     }
 
+    let millCreek = try await TrackSources.search("mill creek pkwy", near: CLLocationCoordinate2D(latitude: 38.57, longitude: -109.53))
+    check(millCreek.contains { $0.uses?.contains("cyclists") == true },
+          "US trail open to cyclists: \(millCreek.prefix(2).map { "\($0.displayName): \($0.uses ?? "-")" })")
     let mist = try await TrackSources.search("mist trail", near: yosemite)
     if let t = mist.first(where: { $0.name == "Mist Trail" }) {
         check(t.state == "US" && t.kind.hasPrefix("Trail"), "US trail found: \(t.displayName), \(t.kind), \(t.segments.count) pieces")

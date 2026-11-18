@@ -240,8 +240,8 @@ struct FollowChip: View {
         if follower.isOffRoute { return "Off route by \(units.distance(p.offBy)) · route to the \(p.directionToRouteShort)" }
         switch follower.direction {
         case .unknown: return "\(units.distance(p.done)) from the start · \(units.distance(p.remaining)) to the end"
-        case .forward: return "\(units.distance(follower.walked)) walked · \(units.distance(p.remaining)) to go"
-        case .reverse: return "\(units.distance(follower.walked)) walked · \(units.distance(p.done)) to the start"
+        case .forward: return "\(units.distance(follower.walked)) done · \(units.distance(p.remaining)) to go"
+        case .reverse: return "\(units.distance(follower.walked)) done · \(units.distance(p.done)) to the start"
         }
     }
 }

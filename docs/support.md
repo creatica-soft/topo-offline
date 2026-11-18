@@ -26,7 +26,7 @@ Victoria it draws walking tracks over it. The Norwegian map works online only fo
 until Kartverket allows saving it on the phone.
 
 **How do I choose the map or switch to miles and feet?**
-Tap the gear at the top left of the map. Settings has the maps by country, units, walk recording,
+Tap the gear at the top left of the map. Settings has the maps by country, units, recording,
 and the privacy policy and map credits. The map also switches by itself when you move into another
 state or country.
 
@@ -44,7 +44,7 @@ depending on the state. Delete areas under **Offline maps** (swipe left).
 
 **Does the app track me or record my walks?**
 The app never tracks you or sends your location anywhere; see the [privacy policy](../privacy/).
-Walk recording is off unless you turn it on in Settings, and recorded walks stay on your iPhone.
+Recording is off unless you turn it on in Settings, and recordings stay on your iPhone.
 Recording keeps GPS on while the phone is locked, so it uses more battery. For a long break,
 tap Pause to turn GPS off, and Resume when you set off again.
 
