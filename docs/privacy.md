@@ -5,7 +5,7 @@ permalink: /privacy/
 
 # Topo Offline privacy policy
 
-*Effective 17 November 2026*
+*Effective 18 November 2026*
 
 **Short version:** Topo Offline doesn't collect any information about you. There's no account,
 no advertising, no analytics and no tracking, and the app has no server of its own. Your location
