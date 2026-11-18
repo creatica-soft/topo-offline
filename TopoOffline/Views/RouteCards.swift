@@ -109,12 +109,15 @@ struct RecordingCard: View {
                 .foregroundStyle(recorder.isPaused ? Color.secondary : Color.red)
                 .symbolEffect(.pulse, isActive: !recorder.isPaused)
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 10) {
-                    if let start = recorder.startDate {
-                        Text(start, style: .timer).monospacedDigit()
+                // Each figure on one line; with large text, the climb moves to a second line, or
+                // all three stack.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) { time; distance; climbText }
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 10) { time; distance }
+                        climbText
                     }
-                    Text(units.distance(recorder.distance)).monospacedDigit()
-                    Text("↑ \(units.height(recorder.climb.up))").monospacedDigit()
+                    VStack(alignment: .leading, spacing: 2) { time; distance; climbText }
                 }
                 .font(.subheadline.weight(.semibold))
                 Text(status).font(.caption).foregroundStyle(.secondary)
@@ -130,17 +133,33 @@ struct RecordingCard: View {
             .accessibilityLabel(recorder.isPaused ? "Resume recording" : "Pause recording")
             .accessibilityHint(recorder.isPaused ? "" : "Turns GPS off to save battery during a long stop")
             Button(action: onStop) {
-                Label("Stop", systemImage: "stop.fill")
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                    .fixedSize()
+                ViewThatFits(in: .horizontal) {
+                    Label("Stop", systemImage: "stop.fill").lineLimit(1).fixedSize()
+                    Image(systemName: "stop.fill")
+                }
+                .font(.subheadline.weight(.semibold))
             }
             .buttonStyle(.borderedProminent)
             .tint(.red)
+            .accessibilityLabel("Stop recording")
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
         .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder private var time: some View {
+        if let start = recorder.startDate {
+            Text(start, style: .timer).monospacedDigit().lineLimit(1).fixedSize()
+        }
+    }
+
+    private var distance: some View {
+        Text(units.distance(recorder.distance)).monospacedDigit().lineLimit(1).fixedSize()
+    }
+
+    private var climbText: some View {
+        Text("↑ \(units.height(recorder.climb.up))").monospacedDigit().lineLimit(1).fixedSize()
     }
 
     private var status: String {
