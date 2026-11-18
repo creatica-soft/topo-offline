@@ -115,7 +115,7 @@ struct TrackDetailView: View {
         .chartXAxisLabel(units.distanceUnit)
         .chartYAxisLabel(units.heightUnit)
         .chartXSelection(value: $selected)
-        .frame(height: 220)
+        .frame(height: speed == nil ? 220 : 150)  // shorter with the speed chart, so both fit half a screen
         .accessibilityLabel("Elevation profile, \(Int(units.heightValue(shown.lowest))) to \(Int(units.heightValue(shown.highest))) \(units.heightUnitName)")
     }
 
@@ -175,7 +175,7 @@ struct TrackDetailView: View {
         .chartXAxisLabel(units.distanceUnit)
         .chartYAxisLabel(units.speedUnit)
         .chartXSelection(value: $selected)
-        .frame(height: 140)
+        .frame(height: 110)
         .accessibilityLabel("Speed along the walk, averaging \(units.speed(s.averageMoving)) while moving")
     }
 

@@ -45,12 +45,14 @@ depending on the state. Delete areas under **Offline maps** (swipe left).
 **Does the app track me or record my walks?**
 The app never tracks you or sends your location anywhere; see the [privacy policy](../privacy/).
 Walk recording is off unless you turn it on in Settings, and recorded walks stay on your iPhone.
-Recording keeps GPS on while the phone is locked, so it uses more battery.
+Recording keeps GPS on while the phone is locked, so it uses more battery. For a long break,
+tap Pause to turn GPS off, and Resume when you set off again.
 
 **Will Follow warn me with the phone locked?**
-Yes. While you follow a route, GPS stays on with the phone locked, and if you go more than 100 m
+Yes. While you follow a route, GPS stays on with the phone locked, and if you stray more than 100 m
 from the route you get a notification with sound saying how far away the route is and in which
-direction. Allow notifications when the app asks (or later in Settings › Topo Offline ›
+direction. Change the distance in Settings › Following a route, or by tapping the banner at the
+top of the map. Allow notifications when the app asks (or later in Settings › Topo Offline ›
 Notifications). Following keeps GPS on like recording does, so tap Stop following when you're done.
 
 ## Safety

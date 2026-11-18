@@ -37,7 +37,7 @@ struct TopoMapView: UIViewRepresentable {
     /// The route being planned, if any.
     var draft: RouteDraft? = nil
     /// The walk being recorded; `liveVersion` changes with it.
-    var liveLine: [CLLocationCoordinate2D] = []
+    var liveLine: [[CLLocationCoordinate2D]] = []
     var liveVersion = 0
     /// A waypoint of the route being planned was tapped or dragged.
     var onWaypoint: (WaypointEvent) -> Void = { _ in }
@@ -116,7 +116,7 @@ struct TopoMapView: UIViewRepresentable {
     final class DraftLine: MKMultiPolyline {}
     final class DraftStraight: MKMultiPolyline {}
     /// The walk being recorded (red).
-    final class LiveLine: MKPolyline {}
+    final class LiveLine: MKMultiPolyline {}
     final class WaypointAnnotation: MKPointAnnotation {
         var index = 0
         var isEnd = false
@@ -187,7 +187,8 @@ struct TopoMapView: UIViewRepresentable {
             routeOverlays = []
             guard !routes.isEmpty else { return }
             let planned = Self.polylines(routes.filter { $0.kind != .recorded }.map(\.path))
-            let walked = Self.polylines(routes.filter { $0.kind == .recorded }.map(\.path))
+            // A recording is drawn piece by piece, with no line across a pause.
+            let walked = Self.polylines(routes.filter { $0.kind == .recorded }.flatMap { $0.legs.map(\.points) })
             var overlays: [MKOverlay] = [RouteCasing(planned + walked)]
             if !planned.isEmpty { overlays.append(RouteLine(planned)) }
             if !walked.isEmpty { overlays.append(WalkLine(walked)) }
@@ -196,14 +197,14 @@ struct TopoMapView: UIViewRepresentable {
         }
 
         @MainActor
-        func showLive(_ points: [CLLocationCoordinate2D], version: Int, on map: MKMapView) {
+        func showLive(_ pieces: [[CLLocationCoordinate2D]], version: Int, on map: MKMapView) {
             guard version != liveVersion else { return }
             liveVersion = version
             if let old = liveOverlay { map.removeOverlay(old) }
             liveOverlay = nil
-            guard points.count >= 2 else { return }
-            var pts = points
-            let line = LiveLine(coordinates: &pts, count: pts.count)
+            let lines = Self.polylines(pieces)
+            guard !lines.isEmpty else { return }
+            let line = LiveLine(lines)
             map.addOverlay(line, level: .aboveLabels)
             liveOverlay = line
         }
@@ -664,7 +665,7 @@ struct TopoMapView: UIViewRepresentable {
                 return r
             }
             if let line = overlay as? LiveLine {
-                let r = MKPolylineRenderer(polyline: line)
+                let r = MKMultiPolylineRenderer(multiPolyline: line)
                 r.strokeColor = .systemRed
                 r.lineWidth = 4
                 r.lineCap = .round

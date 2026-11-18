@@ -104,10 +104,10 @@ struct RecordingCard: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "record.circle")
+            Image(systemName: recorder.isPaused ? "pause.circle" : "record.circle")
                 .font(.title2)
-                .foregroundStyle(.red)
-                .symbolEffect(.pulse)
+                .foregroundStyle(recorder.isPaused ? Color.secondary : Color.red)
+                .symbolEffect(.pulse, isActive: !recorder.isPaused)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 10) {
                     if let start = recorder.startDate {
@@ -120,9 +120,20 @@ struct RecordingCard: View {
                 Text(status).font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
+            Button {
+                recorder.isPaused ? recorder.resumeRecording() : recorder.pause()
+            } label: {
+                Image(systemName: recorder.isPaused ? "play.fill" : "pause.fill")
+                    .font(.subheadline.weight(.semibold))
+            }
+            .buttonStyle(.bordered)
+            .accessibilityLabel(recorder.isPaused ? "Resume recording" : "Pause recording")
+            .accessibilityHint(recorder.isPaused ? "" : "Turns GPS off to save battery during a long stop")
             Button(action: onStop) {
                 Label("Stop", systemImage: "stop.fill")
                     .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                    .fixedSize()
             }
             .buttonStyle(.borderedProminent)
             .tint(.red)
@@ -133,6 +144,7 @@ struct RecordingCard: View {
     }
 
     private var status: String {
+        if recorder.isPaused { return "Paused: GPS off to save battery" }
         guard let fix = recorder.lastFix else { return "Waiting for GPS…" }
         var parts: [String] = []
         if let alt = fix.altitude { parts.append("\(units.height(alt)) elevation") }
@@ -154,7 +166,8 @@ struct RouteCard: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            TrackCard(track: route.asTrack, profile: profile, onOpen: onOpen, onZoom: onZoom, onClose: onClose)
+            TrackCard(track: route.asTrack, profile: profile, hasSpeed: route.times.count >= 3,
+                      onOpen: onOpen, onZoom: onZoom, onClose: onClose)
             HStack(spacing: 8) {
                 Button(action: onFollow) {
                     Label(isFollowing ? "Stop following" : "Follow", systemImage: isFollowing ? "xmark" : "location.north.line")
@@ -182,20 +195,32 @@ struct RouteCard: View {
 
 /// Top-of-screen progress while following a route.
 struct FollowChip: View {
-    let route: SavedRoute
-    let progress: RouteProgress?
-    let isOffRoute: Bool
+    let follower: RouteFollower
     let onStop: () -> Void
     @Environment(\.units) private var units
+    @AppStorage(RouteFollower.warnKey) private var warnMeters = RouteProgress.offRouteMeters
 
     var body: some View {
         HStack(spacing: 0) {
-            Label(text, systemImage: isOffRoute ? "exclamationmark.triangle.fill" : "location.north.line.fill")
-                .font(.subheadline.weight(.medium))
-                .monospacedDigit()
-                .lineLimit(2)
-                .padding(.leading, 14)
-                .padding(.vertical, 6)
+            // Tap for the warning distance.
+            Menu {
+                Picker("Warn when off route by", selection: $warnMeters) {
+                    ForEach(RouteFollower.warnChoices, id: \.self) { m in
+                        Text(units.distance(m)).tag(m)
+                    }
+                }
+                .pickerStyle(.inline)
+            } label: {
+                Label(text, systemImage: follower.isOffRoute ? "exclamationmark.triangle.fill" : "location.north.line.fill")
+                    .font(.subheadline.weight(.medium))
+                    .monospacedDigit()
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .padding(.leading, 14)
+                    .padding(.vertical, 6)
+                    .foregroundStyle(.primary)
+            }
+            .accessibilityHint("Choose how far off the route to be warned")
             Button(action: onStop) {
                 Image(systemName: "xmark.circle.fill")
                     .font(.title3)
@@ -205,14 +230,18 @@ struct FollowChip: View {
             }
             .accessibilityLabel("Stop following")
         }
-        .background(isOffRoute ? AnyShapeStyle(Color.orange.opacity(0.9)) : AnyShapeStyle(.regularMaterial),
+        .background(follower.isOffRoute ? AnyShapeStyle(Color.orange.opacity(0.9)) : AnyShapeStyle(.regularMaterial),
                     in: Capsule())
         .padding(.horizontal)
     }
 
     private var text: String {
-        guard let p = progress else { return "Following \(route.name): waiting for your location…" }
-        if isOffRoute { return "Off route by \(units.distance(p.offBy)) · route to the \(p.directionToRouteShort)" }
-        return "\(units.distance(p.done)) done · \(units.distance(p.remaining)) to go"
+        guard let p = follower.progress else { return "Following \(follower.route?.name ?? ""): waiting for your location…" }
+        if follower.isOffRoute { return "Off route by \(units.distance(p.offBy)) · route to the \(p.directionToRouteShort)" }
+        switch follower.direction {
+        case .unknown: return "\(units.distance(p.done)) from the start · \(units.distance(p.remaining)) to the end"
+        case .forward: return "\(units.distance(follower.walked)) walked · \(units.distance(p.remaining)) to go"
+        case .reverse: return "\(units.distance(follower.walked)) walked · \(units.distance(p.done)) to the start"
+        }
     }
 }

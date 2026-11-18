@@ -43,14 +43,17 @@ and New Zealand).
   there are any (using downloaded tracks when offline) and goes straight elsewhere. Tap the line to
   insert a point; tap a point to move it, delete it or extend the route from the start or end. The
   distance and climb update as you go. Saved routes can be followed, showing the distance done and
-  to go. More than 100 m off the route, it vibrates and says which way the route is; with the phone
-  locked it sends a notification with sound (made on the phone, so it works without signal).
+  walked and to go (to the end you're heading for, worked out from which way you walk). Off the
+  route by more than a chosen distance (100 m unless changed), it vibrates and says which way the
+  route is; with the phone locked it sends a notification with sound (made on the phone, so it
+  works without signal).
 - **GPX**: share routes and recorded walks as GPX files, and import GPX tracks and routes from
   Files, AirDrop or other apps.
 - **Walk recording** (off by default, to save battery): records your walk with GPS, also while
   the phone is locked, at a chosen detail (about every 5, 15 or 50 m). It shows the time,
-  distance and climb as you go, and afterwards a speed chart under the elevation profile, with
-  moving time, time stopped and average speed. Recorded walks stay on the phone.
+  distance and climb as you go, and can be paused (GPS off) for a long break. Afterwards it shows
+  a speed chart under the elevation profile, with moving time, time stopped and average speed.
+  Recorded walks stay on the phone.
 - **Units**: kilometres and metres or miles and feet, following the phone's region or chosen in
   Settings (the gear on the map), where you can also pick the map and turn on walk recording.
 - Location, compass and an always-visible scale bar, all working without signal.

@@ -113,7 +113,7 @@ struct ContentView: View {
                     draft: planner.map { TopoMapView.RouteDraft(waypoints: $0.waypoints, legs: $0.legs,
                                                                 key: "\(ObjectIdentifier($0).hashValue)|\($0.version)",
                                                                 selected: $0.selected) },
-                    liveLine: recorder.points, liveVersion: recorder.version,
+                    liveLine: recorder.pieces, liveVersion: recorder.version,
                     onWaypoint: waypointEvent)
             .ignoresSafeArea()
             .overlay(alignment: .top) {
@@ -122,9 +122,8 @@ struct ContentView: View {
                     if let pin {
                         pinChip(pin)
                     }
-                    if let route = follower.route {
-                        FollowChip(route: route, progress: follower.progress, isOffRoute: follower.isOffRoute,
-                                   onStop: { follower.stop() })
+                    if follower.isFollowing {
+                        FollowChip(follower: follower, onStop: { follower.stop() })
                     }
                     if nzNeedsKey {
                         Text(offlineOnly
@@ -196,7 +195,7 @@ struct ContentView: View {
                     }
                 case .route(let route):
                     if case .ready(let profile) = trackProfile {
-                        TrackDetailView(track: route.asTrack, profile: profile, speed: WalkSpeed(path: route.path, times: route.times),
+                        TrackDetailView(track: route.asTrack, profile: profile, speed: WalkSpeed(route: route),
                                         onScrub: { profileMarker = $0 })
                     }
                 default: EmptyView()
@@ -328,7 +327,7 @@ struct ContentView: View {
     private func finishLeftover(_ walk: SavedRoute) {
         var w = walk
         w.inProgress = false
-        if (w.legs.first?.coords.count ?? 0) >= 4 {
+        if w.legs.reduce(0, { $0 + $1.coords.count / 2 }) >= 4 {
             routes.save(w)
             routes.setShown(w.id, true)
         } else {

@@ -15,16 +15,21 @@ enum GPX {
 
         """
         let hasTimes = route.kind == .recorded || !route.times.isEmpty
-        if hasTimes, let leg = route.legs.first {
-            // A recording is one line with a time (and usually an altitude) per point.
-            out += "    <trkseg>\n"
-            for (i, p) in leg.points.enumerated() {
-                out += "      <trkpt lat=\"\(fmt(p.latitude))\" lon=\"\(fmt(p.longitude))\">"
-                if i < route.altitudes.count, let ele = route.altitudes[i] { out += "<ele>\(String(format: "%.1f", ele))</ele>" }
-                if i < route.times.count { out += "<time>\(timeString(route.times[i]))</time>" }
-                out += "</trkpt>\n"
+        if hasTimes, !route.legs.isEmpty {
+            // A recording has a time (and usually an altitude) per point, and one segment per
+            // stretch between pauses.
+            var i = 0
+            for leg in route.legs where !leg.coords.isEmpty {
+                out += "    <trkseg>\n"
+                for p in leg.points {
+                    out += "      <trkpt lat=\"\(fmt(p.latitude))\" lon=\"\(fmt(p.longitude))\">"
+                    if i < route.altitudes.count, let ele = route.altitudes[i] { out += "<ele>\(String(format: "%.1f", ele))</ele>" }
+                    if i < route.times.count { out += "<time>\(timeString(route.times[i]))</time>" }
+                    out += "</trkpt>\n"
+                    i += 1
+                }
+                out += "    </trkseg>\n"
             }
-            out += "    </trkseg>\n"
         } else {
             out += "    <trkseg>\n"
             for p in route.path {
