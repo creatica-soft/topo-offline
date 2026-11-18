@@ -560,17 +560,18 @@ struct ContentView: View {
     private var cardView: some View {
             switch card {
             case .route(let route):
-                RouteCard(route: route, profile: trackProfile, isFollowing: follower.route?.id == route.id,
+                RouteCard(route: route, profile: trackProfile, isFollowing: follower.followingID == route.id.uuidString,
                           onOpen: { if case .ready = trackProfile { details = .route(route) } },
                           onZoom: { controller.show(route.bbox) },
                           onClose: { card = nil },
-                          onFollow: { follower.route?.id == route.id ? follower.stop() : follower.start(route) },
+                          onFollow: { follower.followingID == route.id.uuidString ? follower.stop() : follower.start(route) },
                           onEdit: { startPlanning(route) })
             case .track(let track):
-                TrackCard(track: track, profile: trackProfile,
+                TrailCard(track: track, profile: trackProfile, isFollowing: follower.followingID == track.id,
                           onOpen: { if case .ready = trackProfile { details = .track(track) } },
                           onZoom: { controller.show(track.bbox) },
-                          onClose: { card = nil })
+                          onClose: { card = nil },
+                          onFollow: { follower.followingID == track.id ? follower.stop() : follower.start(track) })
             case .site(let site):
                 SiteCard(site: site, updated: parkInfo.updatedText,
                          onOpen: { details = .site(site) }, onClose: { card = nil })
