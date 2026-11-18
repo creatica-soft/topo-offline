@@ -774,10 +774,17 @@ do {
         check(t.state == "CA" && (p?.ascent ?? 0) > 200, "Parks Canada trail: Lake Agnes, \(t.kind), climb \(Int(p?.ascent ?? 0)) m")
     } else { check(false, "Lake Agnes in Parks Canada trails (found \(lakeAgnes.map(\.displayName)))") }
 
-    // Downloads: Canada and Switzerland allowed, Norway not (yet)
+    // Downloads: Canada, Switzerland and Norway can all be saved offline
     check(DownloadManager.plan(name: "x", area: chBox, source: TileSources.ch, zooms: 14...15, includeOverview: true) != nil
-          && DownloadManager.plan(name: "x", area: noBox, source: TileSources.no, zooms: 14...15, includeOverview: true) == nil,
-          "Swiss maps can be saved offline, Norwegian not yet")
+          && DownloadManager.plan(name: "x", area: noBox, source: TileSources.no, zooms: 14...15, includeOverview: true) != nil,
+          "Swiss and Norwegian maps can be saved offline")
+    let gjendesheim = BoundingBox(minLat: 61.490, minLon: 8.800, maxLat: 61.500, maxLon: 8.825)
+    let rn = await runDownload("Gjendesheim", gjendesheim, TileSources.no, 13...15)
+    let noTile = TileKey(z: 15, x: TileMath.tileX(lon: gjendesheim.center.longitude, z: 15), y: TileMath.tileY(lat: gjendesheim.center.latitude, z: 15))
+    check(rn.isComplete && rn.failedTiles == 0 && library.tile(sourceID: "no-topo", key: noTile).map(TileImage.isImage) == true,
+          "Norwegian area downloaded and readable offline")
+    check(library.searchNames("gjendesheim", near: gjendesheim.center).contains { $0.name.contains("Gjendesheim") }, "Norwegian names saved with the area")
+    store.delete(rn)
     let lakeLouise = BoundingBox(minLat: 51.410, minLon: -116.225, maxLat: 51.420, maxLon: -116.205)
     let rc = await runDownload("Lake Louise", lakeLouise, TileSources.ca, 13...15)
     let caTile = TileKey(z: 15, x: TileMath.tileX(lon: lakeLouise.center.longitude, z: 15), y: TileMath.tileY(lat: lakeLouise.center.latitude, z: 15))

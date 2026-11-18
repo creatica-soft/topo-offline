@@ -239,9 +239,10 @@ enum TileSources {
         usesNationalOverview: false,
         maxTilesPerMinute: 600)
 
-    /// Norway: Kartverket's topographic map (CC BY 4.0).
-    /// Offline saving waits on Kartverket: at zoom 12+ the map includes Geovekst data whose copying
-    /// needs the rightsholders' permission, which has been asked for.
+    /// Norway: Kartverket's topographic map (CC BY 4.0, credited "© Kartverket" with a link).
+    /// At zoom 12+ it includes Geovekst data, whose copying needs the rightsholders' permission:
+    /// Kartverket gave it, also for the Geovekst partners, for saving areas in this app (Nov 2026).
+    /// The cap below keeps downloads moderate; no number is published.
     static let no = TileSource(
         id: "no-topo",
         name: "Norway Topo",
@@ -255,7 +256,7 @@ enum TileSources {
         averageTileBytes: 30_000, storeAsJPEG: true,
         outlines: [CountryOutlines.norway],
         usesNationalOverview: false,
-        allowsOffline: false)
+        maxTilesPerMinute: 600)
 
     /// Elevation (not shown as a map): Terrain Tiles, terrarium-encoded PNGs. Zoom 13 is about
     /// 15 m per pixel here, finer than the 30 m SRTM data behind it in Australia (US data is 10 m 3DEP). Must stay
