@@ -13,7 +13,10 @@ struct TopoOfflineApp: App {
         _store = State(initialValue: store)
         _downloads = State(initialValue: DownloadManager(store: store))
         _routes = State(initialValue: routes)
-        _recorder = State(initialValue: WalkRecorder(store: routes))
+        let recorder = WalkRecorder(store: routes)
+        _recorder = State(initialValue: recorder)
+        Notifications.shared.setUp()
+        Notifications.shared.onPause = { recorder.pause() }
     }
 
     var body: some Scene {

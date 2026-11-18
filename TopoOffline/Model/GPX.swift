@@ -78,8 +78,9 @@ enum GPX {
             var route = SavedRoute(name: name, kind: .imported)
             route.legs = pieces.map { SavedRoute.Leg(coords: $0.flatMap { [$0.lon, $0.lat] }, followsTracks: false) }
             let all = pieces.joined()
-            // Keep times and altitudes only for a single piece where every point has a time.
-            if pieces.count == 1, all.allSatisfy({ $0.time != nil }) {
+            // Keep times and altitudes where every point has a time (one per point of every piece,
+            // as for a recording with pauses).
+            if all.allSatisfy({ $0.time != nil }) {
                 route.times = all.map { $0.time! }
                 route.altitudes = all.map(\.ele)
             }

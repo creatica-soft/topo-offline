@@ -133,7 +133,8 @@ struct RoutesView: View {
             Button { newName = route.name; renaming = route } label: { Label("Rename", systemImage: "pencil") }
         }
         .contextMenu {
-            ShareLink(item: GPXFile(route: route), preview: SharePreview(GPX.fileName(for: route))) {
+            // Every recorded point, not the tidied copy shown in the app.
+            ShareLink(item: GPXFile(route: routes.original(route)), preview: SharePreview(GPX.fileName(for: route))) {
                 Label("Share GPX", systemImage: "square.and.arrow.up")
             }
             if route.kind == .planned {

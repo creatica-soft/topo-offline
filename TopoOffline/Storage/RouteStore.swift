@@ -6,8 +6,11 @@ import Observation
 @MainActor
 @Observable
 final class RouteStore {
-    /// Newest first.
+    /// Newest first, as shown: recordings with their stops tidied up (`SavedRoute.tidyingStops`).
+    /// Files keep every recorded point; `original(_:)` gives them back (for GPX export and edits).
     private(set) var routes: [SavedRoute] = []
+    /// Recordings as recorded, by id.
+    private var originals: [UUID: SavedRoute] = [:]
     /// Routes drawn on the map.
     private(set) var shownIDs: Set<UUID> = []
     let directory: URL
@@ -34,25 +37,42 @@ final class RouteStore {
 
     func route(id: UUID) -> SavedRoute? { routes.first { $0.id == id } }
 
-    /// Adds or replaces a route and writes its file.
+    /// A route as saved: for a recording, every recorded point.
+    func original(_ route: SavedRoute) -> SavedRoute { originals[route.id] ?? route }
+
+    /// Adds or replaces a route (as recorded or planned, not a tidied copy) and writes its file.
     func save(_ route: SavedRoute) {
+        let shown = remember(route)
         if let i = routes.firstIndex(where: { $0.id == route.id }) {
-            routes[i] = route
+            routes[i] = shown
         } else {
-            routes.insert(route, at: 0)
+            routes.insert(shown, at: 0)
         }
         write(route)
     }
 
+    /// Works the stops out again after the stop rule changes in Settings.
+    func retidy() {
+        routes = routes.map { remember(original($0)) }
+    }
+
+    /// Keeps a recording's original and returns the copy to show.
+    private func remember(_ route: SavedRoute) -> SavedRoute {
+        guard route.kind == .recorded else { originals[route.id] = nil; return route }
+        originals[route.id] = route
+        return route.tidyingStops()
+    }
+
     func delete(_ route: SavedRoute) {
         routes.removeAll { $0.id == route.id }
+        originals[route.id] = nil
         try? FileManager.default.removeItem(at: fileURL(route.id))
         setShown(route.id, false)
     }
 
     func rename(_ route: SavedRoute, to name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, var r = self.route(id: route.id) else { return }
+        guard !trimmed.isEmpty, var r = self.route(id: route.id).map(original) else { return }
         r.name = trimmed
         r.modified = Date()
         save(r)
@@ -101,6 +121,7 @@ final class RouteStore {
         routes = files.filter { $0.pathExtension == "json" }
             .compactMap { try? decoder.decode(SavedRoute.self, from: Data(contentsOf: $0)) }
             .sorted { $0.created > $1.created }
+            .map { remember($0) }
         let ids = Set(routes.map(\.id))
         shownIDs = Set((UserDefaults.standard.stringArray(forKey: shownKey) ?? []).compactMap(UUID.init)).intersection(ids)
     }

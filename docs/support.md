@@ -48,6 +48,14 @@ Recording is off unless you turn it on in Settings, and recordings stay on your 
 Recording keeps GPS on while the phone is locked, so it uses more battery. For a long break,
 tap Pause to turn GPS off, and Resume when you set off again.
 
+**How does the app know when I stopped?**
+Staying within 50 m of one spot for 5 minutes counts as a stop: it's left out of moving time and
+average speed, and GPS wandering there (it drifts by tens of metres indoors) isn't drawn or added
+to the distance. If you forget to pause, a notification offers a Pause button. Change the distance
+and time in Settings › Recording › Stops: a larger distance or shorter time catches more stops
+(pottering about at lunch or camp), but very slow walking could then count as stopped. Every
+recorded point is kept, so a new setting also applies to past recordings.
+
 **Can I follow a track as well as my own routes?**
 Yes. Tap a track on the map, then Follow on its card. Tracks published in several pieces are
 joined into one line for the distance done and to go; side tracks don't count as off route.

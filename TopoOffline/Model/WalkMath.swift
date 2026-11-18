@@ -67,12 +67,7 @@ struct RouteProgress: Equatable, Sendable {
     }
 }
 
-/// Speed and stops along a recorded walk, from the GPS times of its points.
-///
-/// Recording has no pause button and doesn't need one: a point is only recorded after 5–50 m of
-/// movement, so standing still adds a long gap between two nearby points, or a few points
-/// wandering in a small circle (GPS drift). A stretch that stays within `stopRadius` for at least
-/// `minStop` counts as a stop. Everything else is moving.
+/// Speed and stops along a recorded walk, from the GPS times of its points (stops: `StopFinder`).
 struct WalkSpeed: Equatable, Sendable {
     /// For the chart: metres along the walk, and the moving speed there (m/s), averaged over
     /// about `window` either side.
@@ -87,43 +82,29 @@ struct WalkSpeed: Equatable, Sendable {
     var stoppedTime: TimeInterval { max(0, totalTime - movingTime) }
     var averageMoving: Double { movingTime > 0 ? movingDistance / movingTime : 0 }
 
-    static let stopRadius = 20.0
-    static let minStop: TimeInterval = 120
     static let window = 100.0
 
     /// For a saved walk: pauses (gaps between its pieces) count as stopped.
-    init?(route: SavedRoute) {
+    init?(route: SavedRoute, rule: StopFinder.Rule = .current) {
         var breaks: Set<Int> = [], count = 0
         for leg in route.legs where !leg.coords.isEmpty {
             if count > 0 { breaks.insert(count - 1) }
             count += leg.coords.count / 2
         }
-        self.init(path: route.path, times: route.times, breaks: breaks)
+        self.init(path: route.path, times: route.times, breaks: breaks, rule: rule)
     }
 
     /// Nil unless every point has a time (recorded walks, and GPX tracks that include times).
     /// `breaks`: segments (point i → i+1) that are a pause, not walking.
-    init?(path: [CLLocationCoordinate2D], times: [Double], breaks: Set<Int> = []) {
+    init?(path: [CLLocationCoordinate2D], times: [Double], breaks: Set<Int> = [], rule: StopFinder.Rule = .current) {
         let n = path.count
         guard n >= 3, times.count == n, let first = times.first, let last = times.last, last > first else { return nil }
         var along = [0.0]
         along.reserveCapacity(n)
         for i in 1..<n { along.append(along[i - 1] + TrackPath.meters(path[i - 1], path[i])) }
 
-        // Stops: from each point, how long the walk stays within `stopRadius` of it.
-        var stopped = [Bool](repeating: false, count: n - 1)  // per segment i → i+1
+        var stopped = StopFinder.stoppedSegments(path, times, rule: rule)  // per segment i → i+1
         for b in breaks where b < n - 1 { stopped[b] = true }
-        var i = 0
-        while i < n - 1 {
-            var j = i
-            while j + 1 < n, TrackPath.meters(path[i], path[j + 1]) <= Self.stopRadius { j += 1 }
-            if j > i, times[j] - times[i] >= Self.minStop {
-                for k in i..<j { stopped[k] = true }
-                i = j
-            } else {
-                i += 1
-            }
-        }
 
         var movingTime = 0.0, movingDistance = 0.0
         for k in 0..<(n - 1) where !stopped[k] {
@@ -227,5 +208,131 @@ enum RecordingFilter {
         guard known.count > 2 else { return (0, 0) }
         let (up, down) = Elevation.climb(Elevation.movingAverage(known, window: 5), threshold: 5)
         return (up, down)
+    }
+}
+
+/// Finds where a recording stood still. A point is only recorded after 5–50 m of movement, so
+/// standing still shows up in the points as
+///  - a long gap between two nearby points (no movement recorded at all),
+///  - points within 20 m of each other (GPS drift outdoors), or
+///  - points wandering around one spot (indoors, where GPS drifts by tens of metres and each
+///    wobble is recorded: a shop, a hut),
+/// lasting at least the rule's time. The rule (Settings › Recording) trades catching stops where
+/// you potter about (lunch, camp) against counting very slow walking as stopped.
+enum StopFinder {
+    struct Rule: Equatable, Sendable {
+        /// Staying within this of one spot…
+        var radius: Double
+        /// …for this long counts as a stop.
+        var duration: TimeInterval
+
+        static let standard = Rule(radius: 50, duration: 300)
+        static let radiusChoices: [Double] = [20, 50, 100]
+        static let durationChoices: [TimeInterval] = [120, 300, 600, 900]
+        static let radiusKey = "stopRadius"
+        static let durationKey = "stopDuration"
+
+        /// From Settings.
+        static var current: Rule {
+            let d = UserDefaults.standard
+            let r = d.double(forKey: radiusKey), t = d.double(forKey: durationKey)
+            return Rule(radius: r > 0 ? r : standard.radius, duration: t > 0 ? t : standard.duration)
+        }
+
+        /// Moving slower than this, on average over `duration`, can count as stopped.
+        var slowestMoving: Double { radius * 1.2 / duration }
+    }
+
+    /// GPS drift outdoors stays within this.
+    static let tight = 20.0
+
+    /// Per segment (point i → i+1): true where it's part of a stop.
+    static func stoppedSegments(_ path: [CLLocationCoordinate2D], _ times: [Double], rule: Rule = .current) -> [Bool] {
+        let n = min(path.count, times.count)
+        guard n >= 2 else { return [] }
+        var stopped = [Bool](repeating: false, count: n - 1)
+        for range in stops(path, times, rule: rule) {
+            for k in range.lowerBound..<range.upperBound { stopped[k] = true }
+        }
+        return stopped
+    }
+
+    /// Each stop as a point range (first point...last point).
+    static func stops(_ path: [CLLocationCoordinate2D], _ times: [Double], rule: Rule = .current) -> [ClosedRange<Int>] {
+        let n = min(path.count, times.count)
+        guard n >= 2 else { return [] }
+        let radius = max(tight, rule.radius), duration = rule.duration
+        var marked = [Bool](repeating: false, count: n - 1)
+        // Staying within `tight` of a point.
+        var i = 0
+        while i < n - 1 {
+            var j = i
+            while j + 1 < n, TrackPath.meters(path[i], path[j + 1]) <= min(tight, radius) { j += 1 }
+            if j > i, times[j] - times[i] >= duration {
+                for k in i..<j { marked[k] = true }
+                i = j
+            } else {
+                i += 1
+            }
+        }
+        // One long gap with hardly any movement (GPS silent indoors, then a jump when it's back).
+        for k in 0..<(n - 1) {
+            let dt = times[k + 1] - times[k], d = TrackPath.meters(path[k], path[k + 1])
+            if dt >= duration, d <= radius || d / dt < rule.slowestMoving { marked[k] = true }
+        }
+        // Wandering around one spot for `duration` (a silence after the last point counts): start
+        // and end close together, and 90% of the points within `radius` of their middle.
+        var drift = [Bool](repeating: false, count: n - 1)
+        for i in 0..<n {
+            var j = i
+            while j + 1 < n, times[j + 1] - times[i] <= duration { j += 1 }
+            guard j > i else { continue }
+            let covered = j + 1 < n ? min(times[j + 1], times[i] + duration) - times[i] : times[j] - times[i]
+            guard covered >= duration * 0.8, TrackPath.meters(path[i], path[j]) <= radius * 1.2 else { continue }
+            let mid = center(path[i...j])
+            let spread = path[i...j].map { TrackPath.meters(mid, $0) }.sorted()
+            guard spread[Int(0.9 * Double(spread.count - 1))] <= radius else { continue }
+            for k in i..<j { drift[k] = true }
+        }
+        // A window can start or end on the way in or out: trim each drifting stretch back to the
+        // points near its middle, so walking up to the stop isn't counted as stopped.
+        for r in runs(drift) {
+            let mid = center(path[r])
+            var a = r.lowerBound, b = r.upperBound
+            while a < b, TrackPath.meters(path[a], mid) > radius / 2 { a += 1 }
+            while b > a, TrackPath.meters(path[b], mid) > radius / 2 { b -= 1 }
+            for m in a..<b { marked[m] = true }
+        }
+        // Stops at the same spot with a short break between (a wobble that didn't fit) are one stop.
+        var out: [ClosedRange<Int>] = []
+        for r in runs(marked) {
+            if let last = out.last, times[r.lowerBound] - times[last.upperBound] <= duration / 2,
+               TrackPath.meters(center(path[last]), center(path[r])) <= radius {
+                out[out.count - 1] = last.lowerBound...r.upperBound
+            } else {
+                out.append(r)
+            }
+        }
+        return out
+    }
+
+    /// Runs of true segments as point ranges.
+    private static func runs(_ segments: [Bool]) -> [ClosedRange<Int>] {
+        var out: [ClosedRange<Int>] = []
+        var k = 0
+        while k < segments.count {
+            guard segments[k] else { k += 1; continue }
+            var j = k
+            while j < segments.count, segments[j] { j += 1 }
+            out.append(k...j)
+            k = j
+        }
+        return out
+    }
+
+    /// Median latitude and longitude (outliers don't drag it).
+    private static func center(_ points: ArraySlice<CLLocationCoordinate2D>) -> CLLocationCoordinate2D {
+        let lats = points.map(\.latitude).sorted(), lons = points.map(\.longitude).sorted()
+        return CLLocationCoordinate2D(latitude: lats[lats.count / 2], longitude: lons[lons.count / 2])
     }
 }
