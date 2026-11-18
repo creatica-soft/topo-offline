@@ -4,6 +4,8 @@ import SwiftUI
 struct TrackCard: View {
     let track: Track
     var profile: ProfileState? = nil
+    /// A recorded walk (or GPX track) with times, which also has a speed profile.
+    var hasSpeed = false
     var onOpen: () -> Void = {}
     let onZoom: () -> Void
     let onClose: () -> Void
@@ -32,7 +34,7 @@ struct TrackCard: View {
                             Text("Climb for \(units.roundDistance(p.lengthKm * 1000)) of \(units.roundDistance(track.lengthKm * 1000))")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
-                        Label("Tap for elevation profile", systemImage: "chevron.up")
+                        Label(hasSpeed ? "Tap for elevation and speed profiles" : "Tap for elevation profile", systemImage: "chevron.up")
                             .font(.caption.weight(.medium)).foregroundStyle(.tint)
                     case .loading:
                         Text(length).font(.subheadline.weight(.medium)).monospacedDigit()

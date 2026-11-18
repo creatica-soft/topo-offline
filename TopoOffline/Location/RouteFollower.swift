@@ -15,6 +15,19 @@ final class RouteFollower: NSObject {
     private(set) var progress: RouteProgress?
     /// Off route (with some slack before it counts as back on, so it doesn't flicker near 100 m).
     private(set) var isOffRoute = false
+    /// Which way along the route the walker is going, once they've moved enough to tell.
+    enum Direction { case unknown, forward, reverse }
+    private(set) var direction = Direction.unknown
+    /// Metres walked along the route since following started (back and forth both count).
+    private(set) var walked = 0.0
+
+    /// Warning distance, chosen in Settings or from the banner.
+    static let warnKey = "offRouteMeters"
+    static let warnChoices: [Double] = [50, 100, 200, 500]
+    private var warnMeters: Double {
+        let m = UserDefaults.standard.double(forKey: Self.warnKey)
+        return m > 0 ? m : RouteProgress.offRouteMeters
+    }
     /// Set when location access is off, so the app can explain how to turn it on.
     var permissionProblem = false
 
@@ -24,6 +37,9 @@ final class RouteFollower: NSObject {
     @ObservationIgnored private let manager = CLLocationManager()
     @ObservationIgnored private var session: CLBackgroundActivitySession?
     @ObservationIgnored private var startWhenAllowed = false
+    /// Where along the route direction and distance walked were last updated.
+    @ObservationIgnored private var directionMark: Double?
+    @ObservationIgnored private var walkedMark: Double?
     private static let notificationID = "off-route"
 
     override init() {
@@ -65,6 +81,10 @@ final class RouteFollower: NSObject {
         path = []
         progress = nil
         isOffRoute = false
+        direction = .unknown
+        walked = 0
+        directionMark = nil
+        walkedMark = nil
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [Self.notificationID])
     }
 
@@ -80,13 +100,23 @@ final class RouteFollower: NSObject {
         guard let route, location.horizontalAccuracy >= 0, location.horizontalAccuracy <= 65,
               let p = RouteProgress.locate(location.coordinate, on: path, previous: progress?.done) else { return }
         progress = p
-        if !isOffRoute, p.offBy > RouteProgress.offRouteMeters {
+        let warnAt = warnMeters
+        if !isOffRoute, p.offBy > warnAt {
             isOffRoute = true
             warn(p, route: route)
-        } else if isOffRoute, p.offBy < RouteProgress.backOnRouteMeters {
+        } else if isOffRoute, p.offBy < warnAt * 0.6 {
             isOffRoute = false
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [Self.notificationID])
         }
+        if !isOffRoute { track(p.done) }
+    }
+
+    /// Works out which way the walker is going (50 m along the route one way or the other, so GPS
+    /// wobble doesn't flip it) and adds up the distance walked (in steps of 20 m, for the same reason).
+    private func track(_ done: Double) {
+        let dm = directionMark ?? done, wm = walkedMark ?? done
+        if done - dm > 50 { direction = .forward; directionMark = done } else if dm - done > 50 { direction = .reverse; directionMark = done } else { directionMark = dm }
+        if abs(done - wm) >= 20 { walked += abs(done - wm); walkedMark = done } else { walkedMark = wm }
     }
 
     private func warn(_ p: RouteProgress, route: SavedRoute) {

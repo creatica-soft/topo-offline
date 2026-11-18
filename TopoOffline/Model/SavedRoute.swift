@@ -50,7 +50,11 @@ struct SavedRoute: Codable, Identifiable, Hashable, Sendable {
     var path: [CLLocationCoordinate2D] { Self.points(coords) }
     var waypointPoints: [CLLocationCoordinate2D] { Self.points(waypoints) }
 
-    var lengthMeters: Double { TrackPath.length(path) }
+    /// Piece by piece: gaps between the pieces of a recording (pauses) or an imported track aren't
+    /// counted. (A planned route's legs join up, so it's the same as the whole line.)
+    var lengthMeters: Double {
+        legs.isEmpty ? TrackPath.length(path) : legs.reduce(0) { $0 + TrackPath.length($1.points) }
+    }
 
     /// Time from the first to the last recorded point.
     var duration: TimeInterval? {

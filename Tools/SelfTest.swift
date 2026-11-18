@@ -466,6 +466,22 @@ do {
             check(abs((r.speed(atDistance: 400).map { $0 * 3.6 } ?? 0) - 3) < 0.2 && r.length == s.length, "speed chart reversed")
         } else { check(false, "speed computed for a timed walk") }
         check(WalkSpeed(path: route, times: []) == nil, "no speed without times")
+
+        // Paused walk: 500 m, an hour's pause during which the walker moved 2 km, then 500 m.
+        var paused = SavedRoute(name: "Paused", kind: .recorded)
+        let a = (0...10).map { off(Double($0) * 50, 0) }, b = (0...10).map { off(2500 + Double($0) * 50, 0) }
+        paused.legs = [SavedRoute.Leg(coords: SavedRoute.coords(a), followsTracks: false),
+                       SavedRoute.Leg(coords: SavedRoute.coords(b), followsTracks: false)]
+        paused.times = (0...10).map { Double($0) * 45 } + (0...10).map { 450 + 3600 + Double($0) * 45 }
+        paused.altitudes = (0...10).map { _ in 100.0 } + (0...10).map { _ in 400.0 }
+        check(abs(paused.lengthMeters - 1000) < 5, "pause: the gap isn't counted in the length (\(Int(paused.lengthMeters)) m)")
+        check(RecordingFilter.climb(paused).up < 1, "pause: no climb counted across the gap")
+        if let ps = WalkSpeed(route: paused) {
+            check(abs(ps.movingTime - 900) < 1 && abs(ps.stoppedTime - 3600) < 1 && abs(ps.movingDistance - 1000) < 5,
+                  "pause: counts as stopped (\(Int(ps.movingTime)) s moving, \(Int(ps.stoppedTime)) s stopped)")
+        } else { check(false, "speed for a paused walk") }
+        let back = GPX.routes(from: GPX.data(for: paused), fallbackName: "x").first
+        check(back?.legs.count == 2 && back?.path.count == 22, "pause: GPX has a segment per piece")
     }
 
     // GPS fixes: a bad-accuracy fix and a 1 km jump are dropped

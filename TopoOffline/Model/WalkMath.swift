@@ -11,10 +11,8 @@ struct RouteProgress: Equatable, Sendable {
     /// Compass bearing (degrees) from the walker to the closest point of the route.
     var bearingToRoute: Double = 0
 
+    /// The default warning distance (it can be changed in Settings).
     static let offRouteMeters = 100.0
-    /// Back on route once this close again (lower than `offRouteMeters`, so a walker near 100 m
-    /// isn't warned again and again).
-    static let backOnRouteMeters = 60.0
     var isOffRoute: Bool { offBy > Self.offRouteMeters }
 
     /// "north-east"
@@ -93,8 +91,19 @@ struct WalkSpeed: Equatable, Sendable {
     static let minStop: TimeInterval = 120
     static let window = 100.0
 
+    /// For a saved walk: pauses (gaps between its pieces) count as stopped.
+    init?(route: SavedRoute) {
+        var breaks: Set<Int> = [], count = 0
+        for leg in route.legs where !leg.coords.isEmpty {
+            if count > 0 { breaks.insert(count - 1) }
+            count += leg.coords.count / 2
+        }
+        self.init(path: route.path, times: route.times, breaks: breaks)
+    }
+
     /// Nil unless every point has a time (recorded walks, and GPX tracks that include times).
-    init?(path: [CLLocationCoordinate2D], times: [Double]) {
+    /// `breaks`: segments (point i → i+1) that are a pause, not walking.
+    init?(path: [CLLocationCoordinate2D], times: [Double], breaks: Set<Int> = []) {
         let n = path.count
         guard n >= 3, times.count == n, let first = times.first, let last = times.last, last > first else { return nil }
         var along = [0.0]
@@ -103,6 +112,7 @@ struct WalkSpeed: Equatable, Sendable {
 
         // Stops: from each point, how long the walk stays within `stopRadius` of it.
         var stopped = [Bool](repeating: false, count: n - 1)  // per segment i → i+1
+        for b in breaks where b < n - 1 { stopped[b] = true }
         var i = 0
         while i < n - 1 {
             var j = i
@@ -182,9 +192,10 @@ struct GPSFix: Equatable, Sendable {
 }
 
 /// Which GPS positions go into a recording: drops invalid and vague fixes, and jumps that would
-/// need faster than 30 km/h (a bad fix under cliffs or trees), unless the last good fix is old.
+/// need faster than 80 km/h (a bad fix under cliffs or trees: real ones jump hundreds of metres
+/// in seconds), unless the last good fix is old. 80 km/h leaves room for cycling downhill.
 enum RecordingFilter {
-    static let maxSpeed = 30 / 3.6
+    static let maxSpeed = 80 / 3.6
     static func accept(_ fix: GPSFix, after last: GPSFix?, maxAccuracy: Double) -> Bool {
         guard fix.horizontalAccuracy >= 0, fix.horizontalAccuracy <= maxAccuracy else { return false }
         guard let last else { return true }
@@ -193,6 +204,21 @@ enum RecordingFilter {
         let d = TrackPath.meters(last.coordinate, fix.coordinate)
         if d > 50, d / dt > maxSpeed, dt < 120 { return false }
         return true
+    }
+
+    /// Climb and descent of a recording, piece by piece (no climb is counted across a pause).
+    static func climb(_ walk: SavedRoute) -> (up: Double, down: Double) {
+        var up = 0.0, down = 0.0, start = 0
+        for leg in walk.legs {
+            let n = leg.coords.count / 2
+            let end = min(start + n, walk.altitudes.count)
+            if end > start {
+                let c = climb(Array(walk.altitudes[start..<end]))
+                up += c.up; down += c.down
+            }
+            start += n
+        }
+        return (up, down)
     }
 
     /// Climb and descent from GPS altitudes, smoothed (GPS altitude wanders by several metres).

@@ -8,6 +8,7 @@ struct SettingsView: View {
     @AppStorage("units") private var unitSetting = UnitSetting.automatic.rawValue
     @AppStorage("recordingEnabled") private var recordingEnabled = false
     @AppStorage("recordingDetail") private var recordingDetail = WalkRecorder.Detail.standard.rawValue
+    @AppStorage(RouteFollower.warnKey) private var warnMeters = RouteProgress.offRouteMeters
     @Environment(\.units) private var units
 
     /// Countries with maps, in the order they're listed.
@@ -84,6 +85,18 @@ struct SettingsView: View {
                     Text(recordingEnabled
                          ? "\(WalkRecorder.Detail(rawValue: recordingDetail)?.explanation ?? "") A record button appears on the map. Recording keeps GPS on while the phone is locked, which uses a lot more battery: carry a power bank on long walks. Your walks stay on your iPhone."
                          : "Off to save battery. When on, a record button appears on the map.")
+                }
+
+                Section {
+                    Picker("Warn when off route by", selection: $warnMeters) {
+                        ForEach(RouteFollower.warnChoices, id: \.self) { m in
+                            Text(units.distance(m)).tag(m)
+                        }
+                    }
+                } header: {
+                    Text("Following a route")
+                } footer: {
+                    Text("While you follow a route, GPS stays on with the phone locked, and you get a notification with sound if you stray this far. You can also change it by tapping the banner at the top of the map.")
                 }
 
                 Section {
