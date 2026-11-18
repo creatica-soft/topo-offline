@@ -193,6 +193,34 @@ struct RouteCard: View {
     }
 }
 
+/// A published track: the track card plus Follow.
+struct TrailCard: View {
+    let track: Track
+    let profile: ProfileState?
+    let isFollowing: Bool
+    let onOpen: () -> Void
+    let onZoom: () -> Void
+    let onClose: () -> Void
+    let onFollow: () -> Void
+
+    var body: some View {
+        VStack(spacing: 6) {
+            TrackCard(track: track, profile: profile, onOpen: onOpen, onZoom: onZoom, onClose: onClose)
+            HStack(spacing: 8) {
+                Button(action: onFollow) {
+                    Label(isFollowing ? "Stop following" : "Follow", systemImage: isFollowing ? "xmark" : "location.north.line")
+                }
+                Spacer(minLength: 0)
+            }
+            .font(.subheadline.weight(.medium))
+            .buttonStyle(.bordered)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        }
+    }
+}
+
 /// Top-of-screen progress while following a route.
 struct FollowChip: View {
     let follower: RouteFollower

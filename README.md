@@ -44,7 +44,7 @@ and New Zealand).
 - **Routes**: tap the map to plan a route. Between two points it follows the walking tracks where
   there are any (using downloaded tracks when offline) and goes straight elsewhere. Tap the line to
   insert a point; tap a point to move it, delete it or extend the route from the start or end. The
-  distance and climb update as you go. Saved routes can be followed, showing the distance done and to
+  distance and climb update as you go. Saved routes and published tracks can be followed, showing the distance done and to
   go (to the end you're heading for, worked out from which way you're going). Off the
   route by more than a chosen distance (100 m unless changed), it vibrates and says which way the
   route is; with the phone locked it sends a notification with sound (made on the phone, so it

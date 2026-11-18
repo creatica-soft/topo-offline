@@ -48,6 +48,10 @@ Recording is off unless you turn it on in Settings, and recordings stay on your 
 Recording keeps GPS on while the phone is locked, so it uses more battery. For a long break,
 tap Pause to turn GPS off, and Resume when you set off again.
 
+**Can I follow a track as well as my own routes?**
+Yes. Tap a track on the map, then Follow on its card. Tracks published in several pieces are
+joined into one line for the distance done and to go; side tracks don't count as off route.
+
 **Will Follow warn me with the phone locked?**
 Yes. While you follow a route, GPS stays on with the phone locked, and if you stray more than 100 m
 from the route you get a notification with sound saying how far away the route is and in which

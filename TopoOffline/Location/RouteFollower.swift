@@ -32,8 +32,13 @@ final class RouteFollower: NSObject {
     var permissionProblem = false
 
     var isFollowing: Bool { route != nil }
+    /// What's being followed: a saved route's id, or a published track's `Track.id`.
+    private(set) var followingID: String?
 
     @ObservationIgnored private var path: [CLLocationCoordinate2D] = []
+    /// For a published track: all its pieces, so a side track that isn't part of the line being
+    /// followed doesn't count as off route.
+    @ObservationIgnored private var pieces: [TrackSegment] = []
     @ObservationIgnored private let manager = CLLocationManager()
     @ObservationIgnored private var session: CLBackgroundActivitySession?
     @ObservationIgnored private var startWhenAllowed = false
@@ -52,9 +57,25 @@ final class RouteFollower: NSObject {
     }
 
     func start(_ route: SavedRoute) {
+        start(route, id: route.id.uuidString, pieces: [])
+    }
+
+    /// Follows a published track. Its pieces are joined into one line (as for the elevation
+    /// profile) for the distance done and to go.
+    func start(_ track: Track) {
+        let line = TrackPath.chain(track.segments.map(\.points)).path
+        guard line.count >= 2 else { return }
+        var route = SavedRoute(name: track.displayName, kind: .imported)
+        route.legs = [SavedRoute.Leg(coords: SavedRoute.coords(line), followsTracks: true)]
+        start(route, id: track.id, pieces: track.segments)
+    }
+
+    private func start(_ route: SavedRoute, id: String, pieces: [TrackSegment]) {
         stop()
         self.route = route
+        followingID = id
         path = route.path
+        self.pieces = pieces
         let center = UNUserNotificationCenter.current()
         center.delegate = self
         // Asks once; if notifications are turned off, the warning is a vibration in the app only.
@@ -78,7 +99,9 @@ final class RouteFollower: NSObject {
         session = nil
         startWhenAllowed = false
         route = nil
+        followingID = nil
         path = []
+        pieces = []
         progress = nil
         isOffRoute = false
         direction = .unknown
@@ -98,7 +121,10 @@ final class RouteFollower: NSObject {
 
     private func update(_ location: CLLocation) {
         guard let route, location.horizontalAccuracy >= 0, location.horizontalAccuracy <= 65,
-              let p = RouteProgress.locate(location.coordinate, on: path, previous: progress?.done) else { return }
+              var p = RouteProgress.locate(location.coordinate, on: path, previous: progress?.done) else { return }
+        if p.offBy > 20, !pieces.isEmpty {
+            p.offBy = min(p.offBy, pieces.map { $0.distanceMeters(to: location.coordinate) }.min() ?? .infinity)
+        }
         progress = p
         let warnAt = warnMeters
         if !isOffRoute, p.offBy > warnAt {
