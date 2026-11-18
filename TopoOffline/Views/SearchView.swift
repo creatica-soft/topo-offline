@@ -53,6 +53,8 @@ struct SearchView: View {
                 }
             }
             .safeAreaInset(edge: .top) { searchField }
+            // Scrolling the results puts the keyboard away, so they can all be seen.
+            .scrollDismissesKeyboard(.immediately)
             .navigationTitle("Search")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -71,6 +73,7 @@ struct SearchView: View {
                 .focused($focused)
                 .autocorrectionDisabled()
                 .submitLabel(.search)
+                .onSubmit { focused = false }  // the search key hides the keyboard
             if searching {
                 ProgressView()
             } else if !text.isEmpty {
