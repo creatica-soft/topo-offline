@@ -53,14 +53,26 @@ final class Notifications: NSObject {
 }
 
 extension Notifications: UNUserNotificationCenterDelegate {
+    // The completion-handler forms, answered on the main thread: UIKit requires that, and the
+    // async forms of these methods answer from a background thread, which crashed the app when a
+    // notification was tapped.
+
     /// With the app on screen: the off-route banner at the top of the map already says it, so just
     /// the sound; the pause reminder shows as a banner too.
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        notification.request.identifier == Self.offRoute ? [.sound] : [.banner, .sound]
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                            withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        let options: UNNotificationPresentationOptions = notification.request.identifier == Self.offRoute ? [.sound] : [.banner, .sound]
+        DispatchQueue.main.async { completionHandler(options) }
     }
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        guard response.actionIdentifier == Self.pauseAction else { return }
-        await MainActor.run { Notifications.shared.onPause?() }
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                            withCompletionHandler completionHandler: @escaping () -> Void) {
+        let pause = response.actionIdentifier == Self.pauseAction
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                if pause { Notifications.shared.onPause?() }
+            }
+            completionHandler()
+        }
     }
 }
